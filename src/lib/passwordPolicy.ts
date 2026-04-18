@@ -24,10 +24,7 @@ export interface PasswordValidationResult {
 export async function getPasswordPolicy(): Promise<PasswordPolicy | null> {
   try {
     const { data } = await supabase
-      .from('admin_settings')
-      .select('password_min_length, password_max_length, password_require_uppercase, password_min_uppercase, password_require_lowercase, password_min_lowercase, password_require_numbers, password_min_numbers, password_require_special, password_min_special, password_allowed_special_chars, password_policy_applies_to')
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .rpc('get_public_password_policy')
       .maybeSingle();
 
     if (!data) {

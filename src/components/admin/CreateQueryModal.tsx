@@ -1,15 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { supabase, UserProfile } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { ToastMessage } from '../common/Toast';
 
 interface CreateQueryModalProps {
   onClose: () => void;
   onCreated: () => void;
+  onToast?: (toast: Omit<ToastMessage, 'id'>) => void;
 }
 
-export default function CreateQueryModal({ onClose, onCreated }: CreateQueryModalProps) {
-  const { user, profile } = useAuth();
+export default function CreateQueryModal({ onClose, onCreated, onToast }: CreateQueryModalProps) {
+  const { user, profile, activeRole } = useAuth();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('normal');
@@ -20,36 +22,45 @@ export default function CreateQueryModal({ onClose, onCreated }: CreateQueryModa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const accountId = activeRole?.type === 'account' ? activeRole.accountId : profile?.account_id;
+  const fetchedForAccountRef = useRef<string | null>(null);
+
   useEffect(() => {
+    if (!accountId) return;
+    if (fetchedForAccountRef.current === accountId) return;
+    fetchedForAccountRef.current = accountId;
+
     const fetchTeamMembers = async () => {
-      if (!profile) return;
-
       try {
-        // Check session
-        const { data: sessionData } = await supabase.auth.getSession();
-        console.log('Current session:', sessionData.session?.user.id);
-        console.log('Current profile:', profile);
-
         const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('role', 'team_member')
-          .eq('is_active', true);
+          .from('user_roles')
+          .select('user_id, profiles!user_roles_user_id_fkey(id, full_name, email, is_active)')
+          .eq('account_id', accountId)
+          .eq('role', 'member')
+          .eq('profiles.is_active', true);
 
         if (error) {
           console.error('Error fetching team members:', error);
           setError(`Failed to load team members: ${error.message}`);
+          return;
         }
 
-        console.log('Team members data:', data);
-        setTeamMembers(data || []);
+        type MemberRow = { user_id: string; profiles: Partial<UserProfile> | Partial<UserProfile>[] | null };
+        const members: UserProfile[] = (data as MemberRow[] || [])
+          .map((row) => {
+            const p = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+            return p as UserProfile ?? null;
+          })
+          .filter((p): p is UserProfile => p !== null);
+
+        setTeamMembers(members);
       } catch (err) {
         console.error('Error fetching team members:', err);
       }
     };
 
     fetchTeamMembers();
-  }, [profile]);
+  }, [accountId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,82 +76,43 @@ export default function CreateQueryModal({ onClose, onCreated }: CreateQueryModa
     try {
       if (!user) throw new Error('User not found');
 
-      const { data: query, error: queryError } = await supabase
-        .from('queries')
-        .insert({
-          created_by: user.id,
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
+
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-query`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           title,
           description,
           priority,
-          show_priority: showPriority,
-          status: 'pending',
-        })
-        .select()
-        .single();
+          showPriority,
+          selectedMembers,
+          sendEmail,
+        }),
+      });
 
-      if (queryError) throw queryError;
+      const result = await response.json();
 
-      const assignments = selectedMembers.map((memberId) => ({
-        query_id: query.id,
-        assigned_to: memberId,
-      }));
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create query');
+      }
 
-      const { error: assignError } = await supabase
-        .from('query_assignments')
-        .insert(assignments);
-
-      if (assignError) throw assignError;
-
-      if (sendEmail && selectedMembers.length > 0) {
-        const selectedMemberProfiles = teamMembers.filter(m => selectedMembers.includes(m.id));
-        const emailResults: string[] = [];
-
-        for (const member of selectedMemberProfiles) {
-          try {
-            const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-email`;
-
-            const response = await fetch(apiUrl, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                to: member.email,
-                subject: `New Query Assigned: ${title}`,
-                html: `
-                  <h2>You have been assigned a new query</h2>
-                  <p><strong>Title:</strong> ${title}</p>
-                  <p><strong>Description:</strong> ${description || 'No description provided'}</p>
-                  <p><strong>Priority:</strong> ${priority}</p>
-                  <p><strong>Status:</strong> Pending</p>
-                  <p>Please log in to the system to view and respond to this query.</p>
-                `
-              })
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-              emailResults.push(`✓ Email sent successfully to: ${member.email}`);
-            } else {
-              const errorMsg = result.error || result.details || JSON.stringify(result);
-              emailResults.push(`✗ Failed to send email to ${member.email}: ${errorMsg}`);
-            }
-          } catch (emailError) {
-            console.error(`Failed to send email to ${member.email}:`, emailError);
-            emailResults.push(`✗ Failed to send email to ${member.email}: ${emailError instanceof Error ? emailError.message : 'Unknown error'}`);
-          }
-        }
-
-        if (emailResults.length > 0) {
-          alert('Email Status:\n\n' + emailResults.join('\n'));
-        }
+      if (onToast) {
+        onToast({ type: 'success', title: 'Query created successfully' });
       }
 
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      setError(message);
+      if (onToast) {
+        onToast({ type: 'error', title: 'Failed to create query', message });
+      }
     } finally {
       setLoading(false);
     }

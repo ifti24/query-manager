@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase, Query, QueryAssignment } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { logUnauthorizedAccess, isUnauthorizedError, buildDescription } from '../../lib/securityAudit';
 import { AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import { TruncatedText } from '../common/TruncatedText';
 import { formatDateTime } from '../../lib/dateFormatter';
@@ -45,6 +46,16 @@ export default function QueryList({ onSelectQuery, selectedQueryId, filter, onFi
       }
     } catch (error) {
       console.error('Error fetching queries:', error);
+      const e = error as { message?: string; code?: string };
+      if (isUnauthorizedError(e)) {
+        logUnauthorizedAccess({
+          user_id: user?.id,
+          service_context: 'query_assignments:fetch',
+          description: buildDescription('query_assignments:fetch', e),
+          error_code: e.code,
+          error_message: e.message,
+        });
+      }
     } finally {
       setLoading(false);
     }

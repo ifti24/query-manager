@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Send, Flag, Calendar, User, CheckCircle, Archive, AlertTriangle, Clock } from 'lucide-react';
 import { formatDateTime } from '../../lib/dateFormatter';
 import { calculateQueryAge } from '../../lib/queryAge';
+import { logUnauthorizedAccess, isUnauthorizedError, buildDescription } from '../../lib/securityAudit';
 
 interface AdminQueryDetailProps {
   queryId: string;
@@ -41,54 +42,45 @@ export default function AdminQueryDetail({ queryId, onClose }: AdminQueryDetailP
     if (!queryId) return;
 
     try {
-      setLoading(true);
-
       const { data: queryData } = await supabase
         .from('queries')
         .select(`
-          *,
-          profiles!queries_created_by_fkey(full_name, email)
+          id, title, description, status, priority, show_priority, created_by, created_at, completed_at, archived, consecutive_admin_comments,
+          profiles!queries_created_by_fkey(id, full_name, email, role)
         `)
         .eq('id', queryId)
         .maybeSingle();
 
-      if (queryData) {
-        const { data: assignments } = await supabase
+      if (!queryData) return;
+
+      const [{ data: assignments }, { data: responses }, { data: comments }] = await Promise.all([
+        supabase
           .from('query_assignments')
           .select('assigned_to, profiles!query_assignments_assigned_to_fkey(id, full_name, email)')
-          .eq('query_id', queryId);
+          .eq('query_id', queryId),
+        supabase
+          .from('query_responses')
+          .select('id, query_id, assignment_id, responded_by, content, created_at, profiles!query_responses_responded_by_fkey(id, full_name, role)')
+          .eq('query_id', queryId)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('query_comments')
+          .select('id, query_id, created_by, content, created_at, profiles!query_comments_created_by_fkey(id, full_name, role)')
+          .eq('query_id', queryId)
+          .order('created_at', { ascending: false }),
+      ]);
 
-        const assignedMembers = assignments?.map((a: any) => ({
-          id: a.profiles.id,
-          full_name: a.profiles.full_name,
-          email: a.profiles.email,
-        }));
+      const assignedMembers = assignments?.map((a: any) => ({
+        id: a.profiles.id,
+        full_name: a.profiles.full_name,
+        email: a.profiles.email,
+      }));
 
-        setQuery({
-          ...queryData,
-          creator: queryData.profiles,
-          assigned_members: assignedMembers || [],
-        });
-      }
-
-      const { data: responses } = await supabase
-        .from('query_responses')
-        .select('*')
-        .eq('query_id', queryId)
-        .order('created_at', { ascending: false });
-
-      const { data: comments, error: commentsError } = await supabase
-        .from('query_comments')
-        .select('*')
-        .eq('query_id', queryId)
-        .order('created_at', { ascending: false });
-
-      if (commentsError) {
-        console.error('Error fetching comments:', commentsError);
-      }
-
-      console.log('Fetched comments:', comments);
-      console.log('Fetched responses:', responses);
+      setQuery({
+        ...queryData,
+        creator: queryData.profiles,
+        assigned_members: assignedMembers || [],
+      });
 
       const responsesWithType: Activity[] = (responses || []).map((r) => ({ ...r, type: 'response' as const }));
       const commentsWithType: Activity[] = (comments || []).map((c) => ({ ...c, type: 'comment' as const }));
@@ -97,38 +89,40 @@ export default function AdminQueryDetail({ queryId, onClose }: AdminQueryDetailP
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
 
-      console.log('All activities:', allActivities);
-
       setActivities(allActivities);
 
-      const userIds = new Set<string>();
-      responses?.forEach((r) => userIds.add(r.responded_by));
-      comments?.forEach((c) => userIds.add(c.created_by));
+      const map: Record<string, UserProfile> = {};
+      responses?.forEach((r) => {
+        const p = r.profiles as any;
+        if (p) map[r.responded_by] = p;
+      });
+      comments?.forEach((c) => {
+        const p = c.profiles as any;
+        if (p) map[c.created_by] = p;
+      });
       if (queryData) {
-        userIds.add(queryData.created_by);
+        map[queryData.created_by] = queryData.profiles as any;
       }
-
-      if (userIds.size > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('*')
-          .in('id', Array.from(userIds));
-
-        const map: Record<string, UserProfile> = {};
-        profiles?.forEach((p) => {
-          map[p.id] = p;
-        });
-        setProfilesMap(map);
-      }
+      setProfilesMap(map);
     } catch (error) {
       console.error('Error fetching query details:', error);
-    } finally {
-      setLoading(false);
+      const e = error as { message?: string; code?: string };
+      if (isUnauthorizedError(e)) {
+        logUnauthorizedAccess({
+          user_id: user?.id,
+          service_context: 'queries:fetchQueryDetail',
+          description: buildDescription('queries:fetchQueryDetail', e, { resource_id: queryId }),
+          error_code: e.code,
+          error_message: e.message,
+          metadata: { query_id: queryId },
+        });
+      }
     }
   };
 
   useEffect(() => {
-    fetchQueryDetails();
+    setLoading(true);
+    fetchQueryDetails().finally(() => setLoading(false));
   }, [queryId]);
 
   const handleSubmitComment = async (e: React.FormEvent) => {
@@ -138,14 +132,24 @@ export default function AdminQueryDetail({ queryId, onClose }: AdminQueryDetailP
     setSubmitting(true);
 
     try {
-      const { data: insertData, error: insertError } = await supabase.from('query_comments').insert({
-        query_id: queryId,
-        created_by: user.id,
-        content: commentContent,
-      });
+      const { data: inserted, error: insertError } = await supabase
+        .from('query_comments')
+        .insert({ query_id: queryId, created_by: user.id, content: commentContent })
+        .select('id, query_id, created_by, content, created_at')
+        .single();
 
       if (insertError) {
         console.error('Error inserting comment:', insertError);
+        if (isUnauthorizedError({ message: insertError.message, code: insertError.code })) {
+          logUnauthorizedAccess({
+            user_id: user?.id,
+            service_context: 'query_comments:insert',
+            description: buildDescription('query_comments:insert', insertError, { resource_id: queryId }),
+            error_code: insertError.code,
+            error_message: insertError.message,
+            metadata: { query_id: queryId },
+          });
+        }
         alert('Failed to post comment: ' + insertError.message);
         return;
       }
@@ -158,6 +162,18 @@ export default function AdminQueryDetail({ queryId, onClose }: AdminQueryDetailP
       if (updateError) {
         console.error('Error updating query status:', updateError);
       }
+
+      const newActivity: Activity = {
+        ...inserted,
+        type: 'comment' as const,
+      };
+
+      setActivities(prev => [newActivity, ...prev]);
+      setProfilesMap(prev => ({
+        ...prev,
+        [user.id]: { id: user.id, full_name: profile?.full_name || '', email: profile?.email || '', role: profile?.role || 'admin' } as UserProfile,
+      }));
+      setQuery(prev => prev ? { ...prev, status: 'pending' } : prev);
 
       if (sendEmail && query?.assigned_members && query.assigned_members.length > 0) {
         for (const member of query.assigned_members) {
@@ -191,7 +207,6 @@ export default function AdminQueryDetail({ queryId, onClose }: AdminQueryDetailP
 
       setCommentContent('');
       setSendEmail(true);
-      await fetchQueryDetails();
     } catch (error) {
       console.error('Error submitting comment:', error);
       alert('Failed to post comment');
@@ -209,7 +224,7 @@ export default function AdminQueryDetail({ queryId, onClose }: AdminQueryDetailP
         .update({ status: 'done', completed_at: new Date().toISOString() })
         .eq('id', queryId);
 
-      fetchQueryDetails();
+      setQuery(prev => prev ? { ...prev, status: 'done', completed_at: new Date().toISOString() } : prev);
     } catch (error) {
       console.error('Error closing query:', error);
     }

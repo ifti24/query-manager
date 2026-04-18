@@ -26,21 +26,62 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Missing or invalid authorization header" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const callerToken = authHeader.replace("Bearer ", "");
+    const callerClient = createClient(supabaseUrl, callerToken, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: { user }, error: userError } = await callerClient.auth.getUser();
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: profile, error: profileError } = await serviceClient
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: user profile not found" }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
 
     const gmailUser = Deno.env.get("GMAIL_USER");
     const gmailPassword = Deno.env.get("GMAIL_APP_PASSWORD");
-
-    console.log("Gmail user configured:", gmailUser ? "Yes" : "No");
-    console.log("Gmail password configured:", gmailPassword ? "Yes" : "No");
 
     if (!gmailUser || !gmailPassword) {
       throw new Error("Gmail credentials not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD environment variables.");
     }
 
     const { to, subject, html, from }: EmailRequest = await req.json();
-
-    console.log("Email request received:", { to, subject, hasHtml: !!html });
 
     if (!to || !subject || !html) {
       return new Response(
@@ -63,8 +104,6 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    console.log("Attempting to send email...");
-
     let emailStatus = "failed";
     let errorMessage = null;
 
@@ -76,10 +115,9 @@ Deno.serve(async (req: Request) => {
         html: html,
       });
 
-      console.log("Email sent successfully:", info.messageId);
       emailStatus = "sent";
 
-      await supabase.from("email_logs").insert({
+      await serviceClient.from("email_logs").insert({
         recipient: to,
         subject: subject,
         status: emailStatus,
@@ -103,11 +141,10 @@ Deno.serve(async (req: Request) => {
         }
       );
     } catch (sendError) {
-      console.error("Failed to send email:", sendError);
       emailStatus = "failed";
       errorMessage = sendError.message || sendError.toString();
 
-      await supabase.from("email_logs").insert({
+      await serviceClient.from("email_logs").insert({
         recipient: to,
         subject: subject,
         status: emailStatus,
@@ -118,7 +155,6 @@ Deno.serve(async (req: Request) => {
       throw sendError;
     }
   } catch (error) {
-    console.error("Error sending email:", error);
     return new Response(
       JSON.stringify({
         error: error.message || "Internal server error",

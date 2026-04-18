@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { supabase, Query, QueryResponse, QueryComment } from '../../lib/supabase';
+import { useCallback, useEffect, useState } from 'react';
+import { supabase, Query } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Plus, Trash2, Archive, RotateCcw, X, AlertTriangle } from 'lucide-react';
+import { logUnauthorizedAccess, isUnauthorizedError, buildDescription } from '../../lib/securityAudit';
+import { Plus, Trash2, Archive, RotateCcw, X, AlertTriangle, Lock } from 'lucide-react';
 import CreateQueryModal from './CreateQueryModal';
 import AdminQueryDetail from './AdminQueryDetail';
 import { DataGrid, Column } from '../common/DataGrid';
@@ -9,17 +10,20 @@ import { TruncatedText } from '../common/TruncatedText';
 import { DashboardFilter } from './Dashboard';
 import { formatDateTime } from '../../lib/dateFormatter';
 import { calculateQueryAge } from '../../lib/queryAge';
-
-interface QueryManagementProps {
-  initialFilter?: DashboardFilter;
-}
+import { QueryLimitBanner } from '../common/FeatureLocked';
+import { ToastContainer, ToastMessage } from '../common/Toast';
 
 interface QueryWithActivity extends Query {
   lastActivityAt: string | null;
 }
 
-export default function QueryManagement({ initialFilter }: QueryManagementProps) {
-  const { user } = useAuth();
+interface QueryManagementProps {
+  initialFilter?: DashboardFilter;
+  onShowPricing?: () => void;
+}
+
+export default function QueryManagement({ initialFilter, onShowPricing }: QueryManagementProps) {
+  const { user, features } = useAuth();
   const [queries, setQueries] = useState<QueryWithActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -28,6 +32,15 @@ export default function QueryManagement({ initialFilter }: QueryManagementProps)
   const [pageSize, setPageSize] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
   const [filter, setFilter] = useState<DashboardFilter>(initialFilter || { archived: false });
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
+    setToasts(prev => [...prev, { ...toast, id: crypto.randomUUID() }]);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   const fetchQueries = async () => {
     if (!user) return;
@@ -60,46 +73,73 @@ export default function QueryManagement({ initialFilter }: QueryManagementProps)
         .order('created_at', { ascending: false })
         .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
 
-      const queriesWithActivity: QueryWithActivity[] = await Promise.all(
-        (data || []).map(async (query) => {
-          const { data: responses } = await supabase
+      const queryIds = (data || []).map((q) => q.id);
+
+      let responsesByQuery = new Map<string, string>();
+      let commentsByQuery = new Map<string, string>();
+
+      if (queryIds.length > 0) {
+        const [{ data: allResponses }, { data: allComments }] = await Promise.all([
+          supabase
             .from('query_responses')
-            .select('created_at')
-            .eq('query_id', query.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          const { data: comments } = await supabase
+            .select('query_id, created_at')
+            .in('query_id', queryIds)
+            .order('created_at', { ascending: false }),
+          supabase
             .from('query_comments')
-            .select('created_at')
-            .eq('query_id', query.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .select('query_id, created_at')
+            .in('query_id', queryIds)
+            .order('created_at', { ascending: false }),
+        ]);
 
-          let lastActivityAt: string | null = null;
-          if (responses && comments) {
-            lastActivityAt = new Date(responses.created_at) > new Date(comments.created_at)
-              ? responses.created_at
-              : comments.created_at;
-          } else if (responses) {
-            lastActivityAt = responses.created_at;
-          } else if (comments) {
-            lastActivityAt = comments.created_at;
+        (allResponses || []).forEach((r) => {
+          if (!responsesByQuery.has(r.query_id)) {
+            responsesByQuery.set(r.query_id, r.created_at);
           }
+        });
+        (allComments || []).forEach((c) => {
+          if (!commentsByQuery.has(c.query_id)) {
+            commentsByQuery.set(c.query_id, c.created_at);
+          }
+        });
+      }
 
-          return {
-            ...query,
-            lastActivityAt,
-          };
-        })
-      );
+      const queriesWithActivity: QueryWithActivity[] = (data || []).map((query) => {
+        const latestResponse = responsesByQuery.get(query.id) ?? null;
+        const latestComment = commentsByQuery.get(query.id) ?? null;
+
+        let lastActivityAt: string | null = null;
+        if (latestResponse && latestComment) {
+          lastActivityAt = new Date(latestResponse) > new Date(latestComment)
+            ? latestResponse
+            : latestComment;
+        } else if (latestResponse) {
+          lastActivityAt = latestResponse;
+        } else if (latestComment) {
+          lastActivityAt = latestComment;
+        }
+
+        return {
+          ...query,
+          lastActivityAt,
+        };
+      });
 
       setQueries(queriesWithActivity);
       setTotalRecords(count || 0);
     } catch (error) {
       console.error('Error fetching queries:', error);
+      const err = error as { message?: string; code?: string };
+      if (isUnauthorizedError(err)) {
+        logUnauthorizedAccess({
+          user_id: user?.id,
+          service_context: 'queries:fetchQueries',
+          description: buildDescription('queries', err),
+          error_code: err.code,
+          error_message: err.message,
+          metadata: { filter },
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -301,8 +341,17 @@ export default function QueryManagement({ initialFilter }: QueryManagementProps)
     },
   ];
 
+  const atQueryLimit = features.queriesLimit !== null && features.queriesUsed >= features.queriesLimit;
+
   return (
     <div className="space-y-6">
+      {features.queriesLimit !== null && (
+        <QueryLimitBanner
+          used={features.queriesUsed}
+          limit={features.queriesLimit}
+          onUpgrade={onShowPricing}
+        />
+      )}
       <div className="flex gap-4 items-center justify-between flex-wrap">
         <div className="flex gap-2 flex-wrap">
           <button
@@ -348,13 +397,24 @@ export default function QueryManagement({ initialFilter }: QueryManagementProps)
             Archived
           </button>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          Create Query
-        </button>
+        {atQueryLimit ? (
+          <button
+            onClick={onShowPricing}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-500 rounded-lg cursor-not-allowed"
+            title="Query limit reached — upgrade to create more"
+          >
+            <Lock className="w-4 h-4" />
+            Query Limit Reached
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Create Query
+          </button>
+        )}
       </div>
 
       {showCreateModal && (
@@ -364,8 +424,11 @@ export default function QueryManagement({ initialFilter }: QueryManagementProps)
             setShowCreateModal(false);
             fetchQueries();
           }}
+          onToast={addToast}
         />
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       <div className="flex gap-6 min-h-[calc(100vh-20rem)]">
         {!selectedQueryId && (

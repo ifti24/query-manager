@@ -38,8 +38,8 @@ export function DataGrid<T>({
   const pageSizeOptions = [10, 25, 50, 100];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between text-sm text-gray-600">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between text-sm text-gray-600 pt-3 px-4">
         <div>
           Showing {totalRecords > 0 ? startRecord : 0} to {endRecord} of {totalRecords} records
         </div>
@@ -114,7 +114,7 @@ export function DataGrid<T>({
         </table>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between px-4 pb-3">
         <div className="text-sm text-gray-600">
           Page {totalRecords > 0 ? currentPage : 0} of {totalPages}
         </div>

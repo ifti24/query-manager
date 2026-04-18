@@ -22,6 +22,33 @@ Deno.serve(async (req: Request) => {
       throw new Error("Missing Supabase environment variables");
     }
 
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Missing or invalid authorization header" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const callerToken = authHeader.replace("Bearer ", "");
+    const callerClient = createClient(supabaseUrl, callerToken, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: { user }, error: userError } = await callerClient.auth.getUser();
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -29,7 +56,22 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    // Get all users
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError || !profile || profile.role !== "admin") {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: admin access required" }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     const { data: users, error: listError } = await supabase.auth.admin.listUsers();
 
     if (listError) throw listError;
@@ -37,11 +79,10 @@ Deno.serve(async (req: Request) => {
     let deletedCount = 0;
     const errors = [];
 
-    // Delete each user
-    for (const user of users.users) {
-      const { error } = await supabase.auth.admin.deleteUser(user.id);
+    for (const u of users.users) {
+      const { error } = await supabase.auth.admin.deleteUser(u.id);
       if (error) {
-        errors.push({ userId: user.id, email: user.email, error: error.message });
+        errors.push({ userId: u.id, email: u.email, error: error.message });
       } else {
         deletedCount++;
       }

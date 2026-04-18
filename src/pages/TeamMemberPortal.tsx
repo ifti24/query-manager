@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LogOut, X, AlertTriangle } from 'lucide-react';
+import { LogOut, AlertTriangle, Users, FileText, BarChart3, Settings, CircleUser as UserCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { signOut } from '../lib/auth';
 import { supabase, Query } from '../lib/supabase';
@@ -7,16 +7,24 @@ import { DataGrid, Column } from '../components/common/DataGrid';
 import { formatDateTime } from '../lib/dateFormatter';
 import { calculateQueryAge } from '../lib/queryAge';
 import QueryDetail from '../components/team/QueryDetail';
+import MySupervisorsTab from '../components/team/MySupervisorsTab';
+import MemberDashboard from '../components/team/MemberDashboard';
+import MemberSettings, { getMemberLandingPage } from '../components/team/MemberSettings';
+import ProfileSettings from '../components/admin/ProfileSettings';
+import { RoleSwitcherDropdown } from '../components/common/RoleSwitcher';
 
 interface QueryWithActivity extends Query {
   lastActivityAt: string | null;
 }
 
+type PortalTab = 'dashboard' | 'queries' | 'my-supervisors' | 'profile' | 'settings';
+
 export default function TeamMemberPortal() {
-  const { profile, user } = useAuth();
+  const { profile, user, activeRole } = useAuth();
+  const [activeTab, setActiveTab] = useState<PortalTab>(getMemberLandingPage() === 'queries' ? 'queries' : 'dashboard');
   const [queries, setQueries] = useState<QueryWithActivity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'answered' | 'done' | 'archived'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'answered' | 'done' | 'archived'>('pending');
   const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -92,14 +100,16 @@ export default function TeamMemberPortal() {
               lastActivityAt = comments.created_at;
             }
 
-            return {
-              ...query,
-              lastActivityAt,
-            };
+            return { ...query, lastActivityAt };
           })
         );
 
-        setQueries(queriesWithActivity);
+        const sorted = queriesWithActivity.sort((a, b) => {
+          const aTime = a.lastActivityAt ?? a.created_at;
+          const bTime = b.lastActivityAt ?? b.created_at;
+          return new Date(bTime).getTime() - new Date(aTime).getTime();
+        });
+        setQueries(sorted);
       }
 
       setTotalRecords(count || 0);
@@ -111,14 +121,19 @@ export default function TeamMemberPortal() {
   };
 
   useEffect(() => {
-    fetchQueries();
-  }, [user, filter, currentPage, pageSize]);
+    if (activeTab === 'queries') {
+      fetchQueries();
+    }
+  }, [user, filter, currentPage, pageSize, activeTab]);
 
   const handleLogout = async () => {
     try {
       await signOut();
     } catch (error) {
       console.error('Logout error:', error);
+    } finally {
+      window.location.replace(window.location.origin + '/');
+      setTimeout(() => window.location.reload(), 50);
     }
   };
 
@@ -133,6 +148,12 @@ export default function TeamMemberPortal() {
       setCurrentPage(1);
     }
     fetchQueries();
+  };
+
+  const handleDashboardFilter = (f: string) => {
+    setFilter(f as 'all' | 'pending' | 'answered' | 'done' | 'archived');
+    setCurrentPage(1);
+    setActiveTab('queries');
   };
 
   const statusBadge = (status: string) => {
@@ -237,16 +258,29 @@ export default function TeamMemberPortal() {
     },
   ];
 
+  const navTabs: { id: PortalTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: <BarChart3 className="w-5 h-5" /> },
+    { id: 'queries', label: 'My Queries', icon: <FileText className="w-5 h-5" /> },
+    { id: 'my-supervisors', label: 'My Supervisors', icon: <Users className="w-5 h-5" /> },
+    { id: 'profile', label: 'My Profile', icon: <UserCircle className="w-5 h-5" /> },
+    { id: 'settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200">
-        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Query Manager</h1>
-            <p className="text-slate-600 text-sm mt-1">My Queries</p>
+            <h1 className="text-2xl font-bold text-slate-900">QueryPing</h1>
+            <p className="text-slate-600 text-sm mt-1">
+              {activeRole?.type === 'account' && activeRole.role === 'supervisor'
+                ? 'Supervisor Dashboard'
+                : 'Member Dashboard'}
+            </p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
+          <div className="flex items-center gap-3">
+            <RoleSwitcherDropdown />
+            <div className="text-right hidden sm:block">
               <p className="text-slate-900 font-medium">{profile?.full_name}</p>
               <p className="text-slate-600 text-sm">{profile?.email}</p>
             </div>
@@ -261,64 +295,87 @@ export default function TeamMemberPortal() {
         </div>
       </header>
 
-      <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex gap-6">
-          {!selectedQueryId && (
-            <div className="w-full transition-all duration-300">
-              <div className="bg-white rounded-lg border border-slate-200">
-                <div className="border-b border-slate-200 p-4">
-                  <div className="flex gap-2 flex-wrap">
-                    {(['all', 'pending', 'answered', 'done', 'archived'] as const).map((f) => (
-                      <button
-                        key={f}
-                        onClick={() => {
-                          setFilter(f);
-                          setCurrentPage(1);
-                        }}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
-                          filter === f
-                            ? 'bg-slate-800 text-white'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                      >
-                        {statusLabels[f]}
-                      </button>
-                    ))}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex gap-2 border-b border-slate-200 overflow-x-auto mb-8">
+          {navTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setSelectedQueryId(null);
+              }}
+              className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'border-slate-800 text-slate-900 font-medium'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'dashboard' && (
+          <MemberDashboard onFilterChange={handleDashboardFilter} />
+        )}
+
+        {activeTab === 'my-supervisors' && <MySupervisorsTab />}
+
+        {activeTab === 'profile' && <ProfileSettings />}
+
+        {activeTab === 'settings' && <MemberSettings />}
+
+        {activeTab === 'queries' && (
+          <div className="flex gap-6">
+            {!selectedQueryId && (
+              <div className="w-full transition-all duration-300">
+                <div className="bg-white rounded-lg border border-slate-200">
+                  <div className="border-b border-slate-200 p-4">
+                    <div className="flex gap-2 flex-wrap">
+                      {(['all', 'pending', 'answered', 'done', 'archived'] as const).map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => {
+                            setFilter(f);
+                            setCurrentPage(1);
+                          }}
+                          className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
+                            filter === f
+                              ? 'bg-slate-800 text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {statusLabels[f]}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  <DataGrid
+                    data={queries}
+                    columns={columns}
+                    isLoading={loading}
+                    currentPage={currentPage}
+                    pageSize={pageSize}
+                    totalRecords={totalRecords}
+                    onPageChange={setCurrentPage}
+                    onPageSizeChange={(size) => {
+                      setPageSize(size);
+                      setCurrentPage(1);
+                    }}
+                  />
                 </div>
-
-                <DataGrid
-                  data={queries}
-                  columns={columns}
-                  isLoading={loading}
-                  currentPage={currentPage}
-                  pageSize={pageSize}
-                  totalRecords={totalRecords}
-                  onPageChange={setCurrentPage}
-                  onPageSizeChange={(size) => {
-                    setPageSize(size);
-                    setCurrentPage(1);
-                  }}
-                />
               </div>
-            </div>
-          )}
+            )}
 
-          {selectedQueryId && (
-            <div className="w-full transition-all duration-300">
-              <div className="relative">
-                <button
-                  onClick={() => handleCloseDetail()}
-                  className="absolute top-4 right-4 z-10 p-2 bg-white hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 shadow-sm"
-                  title="Close"
-                >
-                  <X className="w-5 h-5 text-slate-600" />
-                </button>
+            {selectedQueryId && (
+              <div className="w-full transition-all duration-300">
                 <QueryDetail queryId={selectedQueryId} onClose={handleCloseDetail} />
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -45,6 +45,121 @@ Deno.serve(async (req: Request) => {
       },
     });
 
+    const body = await req.json().catch(() => ({}));
+    const triggered_by: string = body.triggered_by ?? 'system';
+
+    let forceRun = false;
+    if (triggered_by === 'admin' || body.force === true) {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return new Response(
+          JSON.stringify({ error: "Missing or invalid authorization header" }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      const callerToken = authHeader.replace("Bearer ", "");
+      const callerClient = createClient(supabaseUrl, callerToken, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+
+      const { data: { user }, error: userError } = await callerClient.auth.getUser();
+      if (userError || !user) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError || !profile || profile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ error: "Forbidden: admin access required" }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      forceRun = true;
+    }
+
+    if (!forceRun) {
+      const { data: allSettings, error: settingsError } = await supabase
+        .from('admin_settings')
+        .select('email_schedule_time, email_schedule_enabled, email_timezone, email_schedule_days, digest_blacklist_dates');
+
+      if (settingsError) throw settingsError;
+
+      if (!allSettings || allSettings.length === 0) {
+        return new Response(
+          JSON.stringify({ skipped: true, reason: 'No admin settings found' }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const activeSettings = allSettings.find(s => s.email_schedule_enabled === true);
+      if (!activeSettings) {
+        return new Response(
+          JSON.stringify({ skipped: true, reason: 'Daily email digest is disabled' }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const scheduledTime: string = activeSettings.email_schedule_time ?? '08:00';
+      const timezone: string = activeSettings.email_timezone ?? 'GMT+0';
+      const scheduleDays: number[] = Array.isArray(activeSettings.email_schedule_days)
+        ? activeSettings.email_schedule_days
+        : [1, 2, 3, 4, 5];
+      const blacklistDates: string[] = Array.isArray(activeSettings.digest_blacklist_dates)
+        ? activeSettings.digest_blacklist_dates
+        : [];
+
+      const offsetMinutes = parseGmtOffset(timezone);
+      const nowUtcMs = Date.now();
+      const localMs = nowUtcMs + offsetMinutes * 60 * 1000;
+      const localDate = new Date(localMs);
+
+      const localHour = localDate.getUTCHours().toString().padStart(2, '0');
+      const localMinute = localDate.getUTCMinutes().toString().padStart(2, '0');
+      const currentLocalTime = `${localHour}:${localMinute}`;
+
+      if (currentLocalTime !== scheduledTime) {
+        return new Response(
+          JSON.stringify({ skipped: true, reason: `Not scheduled time. Local time (${timezone}): ${currentLocalTime}, Scheduled: ${scheduledTime}` }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const localDayOfWeek = localDate.getUTCDay();
+      if (!scheduleDays.includes(localDayOfWeek)) {
+        return new Response(
+          JSON.stringify({ skipped: true, reason: `Not a scheduled day. Day: ${localDayOfWeek}, Scheduled days: ${scheduleDays.join(',')}` }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const localDateKey = `${localDate.getUTCFullYear()}-${String(localDate.getUTCMonth() + 1).padStart(2, '0')}-${String(localDate.getUTCDate()).padStart(2, '0')}`;
+      if (isDateBlacklisted(localDateKey, blacklistDates)) {
+        return new Response(
+          JSON.stringify({ skipped: true, reason: `Date ${localDateKey} is blacklisted (holiday/blackout)` }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -53,7 +168,6 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    const { triggered_by = 'system' } = await req.json().catch(() => ({ triggered_by: 'system' }));
     const digestBatchId = crypto.randomUUID();
 
     const { data: teamMembers, error: membersError } = await supabase
@@ -66,12 +180,10 @@ Deno.serve(async (req: Request) => {
     if (membersError) throw membersError;
 
     console.log('Team members found:', teamMembers?.length || 0);
-    console.log('Team members:', JSON.stringify(teamMembers));
 
     const emailSummary = [];
 
     for (const member of teamMembers) {
-      console.log(`\n=== Processing member: ${member.email} (${member.id}) ===`);
       const { data: pendingQueries, error: queriesError } = await supabase
         .from('query_assignments')
         .select(`
@@ -93,30 +205,21 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      console.log(`Pending queries raw data (${pendingQueries?.length || 0}):`, JSON.stringify(pendingQueries));
-
       if (!pendingQueries || pendingQueries.length === 0) {
-        console.log('No pending queries found for this member');
         continue;
       }
 
       const validQueries = pendingQueries
         .filter(q => {
-          if (!q.queries) {
-            console.log('Filtered out: no queries object');
-            return false;
-          }
+          if (!q.queries) return false;
           const query = q.queries as any;
           const validStatuses = ['open', 'awaiting_response', 'pending'];
-          const isValid = validStatuses.includes(query.status) && query.archived === false;
-          console.log(`Query ${query.id} (${query.title}): status=${query.status}, archived=${query.archived}, valid=${isValid}`);
-          return isValid;
+          return validStatuses.includes(query.status) && query.archived === false;
         })
         .map(q => {
           const query = q.queries as any;
           const createdAt = new Date(query.created_at);
           const ageDays = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
-
           return {
             id: query.id,
             title: query.title,
@@ -127,28 +230,18 @@ Deno.serve(async (req: Request) => {
           };
         });
 
-      console.log(`Valid queries after filtering: ${validQueries.length}`);
-
-      if (validQueries.length === 0) {
-        console.log('No valid queries, skipping email');
-        continue;
-      }
+      if (validQueries.length === 0) continue;
 
       const emailBody = generateUserEmailBody(member.full_name, validQueries, supabaseUrl);
       const subject = `${validQueries.length} Pending ${validQueries.length === 1 ? 'Query' : 'Queries'} Awaiting Your Response`;
 
-      console.log(`Preparing to send email to ${member.email} via Gmail`);
-
       try {
-        console.log('Sending email via Gmail nodemailer...');
         const info = await transporter.sendMail({
           from: gmailUser,
           to: member.email,
           subject: subject,
           html: emailBody,
         });
-
-        console.log('Email sent successfully:', info.messageId);
 
         await supabase.from('email_logs').insert({
           recipient_email: member.email,
@@ -162,11 +255,7 @@ Deno.serve(async (req: Request) => {
           message_id: info.messageId,
         });
 
-        emailSummary.push({
-          email: member.email,
-          queriesCount: validQueries.length,
-          status: 'sent',
-        });
+        emailSummary.push({ email: member.email, queriesCount: validQueries.length, status: 'sent' });
       } catch (error) {
         console.error(`Failed to send email to ${member.email}:`, error);
 
@@ -182,12 +271,7 @@ Deno.serve(async (req: Request) => {
           triggered_by: triggered_by,
         });
 
-        emailSummary.push({
-          email: member.email,
-          queriesCount: validQueries.length,
-          status: 'failed',
-          error: error.message,
-        });
+        emailSummary.push({ email: member.email, queriesCount: validQueries.length, status: 'failed', error: error.message });
       }
     }
 
@@ -205,15 +289,12 @@ Deno.serve(async (req: Request) => {
 
       for (const admin of admins) {
         try {
-          console.log(`Sending admin summary email to ${admin.email}`);
           const info = await transporter.sendMail({
             from: gmailUser,
             to: admin.email,
             subject: adminSubject,
             html: adminEmailBody,
           });
-
-          console.log(`Admin summary email sent successfully to ${admin.email}:`, info.messageId);
 
           await supabase.from('email_logs').insert({
             recipient_email: admin.email,
@@ -226,11 +307,7 @@ Deno.serve(async (req: Request) => {
             message_id: info.messageId,
           });
 
-          emailSummary.push({
-            email: admin.email,
-            queriesCount: 0,
-            status: 'sent (admin summary)',
-          });
+          emailSummary.push({ email: admin.email, queriesCount: 0, status: 'sent (admin summary)' });
         } catch (error) {
           console.error(`Failed to send admin summary to ${admin.email}:`, error);
 
@@ -245,12 +322,7 @@ Deno.serve(async (req: Request) => {
             triggered_by: triggered_by,
           });
 
-          emailSummary.push({
-            email: admin.email,
-            queriesCount: 0,
-            status: 'failed (admin summary)',
-            error: error.message,
-          });
+          emailSummary.push({ email: admin.email, queriesCount: 0, status: 'failed (admin summary)', error: error.message });
         }
       }
     }
@@ -264,10 +336,7 @@ Deno.serve(async (req: Request) => {
       }),
       {
         status: 200,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   } catch (error) {
@@ -275,14 +344,32 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({ error: error.message }),
       {
         status: 500,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }
 });
+
+function parseGmtOffset(timezone: string): number {
+  const match = timezone.match(/^GMT([+-])(\d+)(?::(\d+))?$/);
+  if (!match) return 0;
+  const sign = match[1] === '+' ? 1 : -1;
+  const hours = parseInt(match[2]);
+  const minutes = parseInt(match[3] ?? '0');
+  return sign * (hours * 60 + minutes);
+}
+
+function isDateBlacklisted(dateKey: string, blacklist: string[]): boolean {
+  for (const entry of blacklist) {
+    if (entry.includes('/')) {
+      const [start, end] = entry.split('/');
+      if (dateKey >= start && dateKey <= end) return true;
+    } else if (entry === dateKey) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function generateUserEmailBody(userName: string, queries: PendingQuery[], supabaseUrl: string): string {
   const urgentQueries = queries.filter(q => q.priority === 'urgent' || q.age_days > 3);
@@ -326,7 +413,7 @@ function generateUserEmailBody(userName: string, queries: PendingQuery[], supaba
         <div style="padding: 32px;">
           ${urgentQueries.length > 0 ? `
             <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; margin-bottom: 24px; border-radius: 4px;">
-              <p style="margin: 0; font-weight: 600; color: #991b1b;">⚠️ Urgent Action Required</p>
+              <p style="margin: 0; font-weight: 600; color: #991b1b;">Urgent Action Required</p>
               <p style="margin: 8px 0 0 0; color: #7f1d1d;">Your manager is waiting for responses on ${urgentQueries.length} urgent ${urgentQueries.length === 1 ? 'query' : 'queries'}. Please respond as soon as possible.</p>
             </div>
           ` : ''}
@@ -388,11 +475,7 @@ async function getMemberQueryCounts(supabase: any) {
       .eq('assigned_to', member.id);
 
     if (queriesError || !assignments) {
-      memberData.push({
-        name: member.full_name || member.email,
-        email: member.email,
-        openQueries: 0,
-      });
+      memberData.push({ name: member.full_name || member.email, email: member.email, openQueries: 0 });
       continue;
     }
 
@@ -404,19 +487,10 @@ async function getMemberQueryCounts(supabase: any) {
     }).length;
 
     totalQueries += openQueriesCount;
-
-    memberData.push({
-      name: member.full_name || member.email,
-      email: member.email,
-      openQueries: openQueriesCount,
-    });
+    memberData.push({ name: member.full_name || member.email, email: member.email, openQueries: openQueriesCount });
   }
 
-  return {
-    members: memberData,
-    totalMembers: teamMembers.length,
-    totalQueries: totalQueries,
-  };
+  return { members: memberData, totalMembers: teamMembers.length, totalQueries };
 }
 
 function generateAdminEmailBody(data: { members: any[], totalMembers: number, totalQueries: number }): string {
