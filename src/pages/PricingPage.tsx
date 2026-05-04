@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Check, X, Zap, Star, Rocket, Gift, ArrowLeft, MessageSquare } from 'lucide-react';
 
 interface PricingPageProps {
@@ -214,6 +214,7 @@ function PlanCard({ plan, onSelectPlan }: { plan: Plan; onSelectPlan?: (planId: 
 
 export default function PricingPage({ onBack, onSelectPlan }: PricingPageProps) {
   const [billingFAQ, setBillingFAQ] = useState<number | null>(null);
+  useEffect(() => { window.scrollTo(0, 0); }, []);
 
   const faqs = [
     {

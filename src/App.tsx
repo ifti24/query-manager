@@ -26,6 +26,7 @@ function App() {
   const { user, loading, roleLoading, activeRole, allRoles, setActiveRole, sessionConfig } = useAuth();
   const [showPricing, setShowPricing] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<SelectedPlan | null>(null);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   const handleSelectPlan = (planId: string, planName: string, planPrice: number) => {
     setSelectedPlan({ id: planId, name: planName, price: planPrice });
@@ -41,11 +42,10 @@ function App() {
     handleTimeout
   );
 
-  const pathname = window.location.pathname;
   const searchParams = new URLSearchParams(window.location.search);
 
-  const isActivationRoute = pathname === '/activate' || searchParams.has('token');
-  const isLandingRoute = pathname === LANDING_PATH;
+  const isActivationRoute = currentPath === '/activate' || searchParams.has('token');
+  const isLandingRoute = currentPath === LANDING_PATH;
 
   if (isActivationRoute && searchParams.has('token')) {
     return <AccountActivationPage />;
@@ -54,8 +54,15 @@ function App() {
   if (isLandingRoute) {
     return (
       <LandingPage
-        onShowPricing={() => setShowPricing(true)}
-        onStartTrial={() => { window.history.pushState({}, '', '/'); window.location.reload(); }}
+        onShowPricing={() => {
+          window.history.pushState({}, '', '/');
+          setCurrentPath('/');
+          setShowPricing(true);
+        }}
+        onStartTrial={() => {
+          window.history.pushState({}, '', '/');
+          setCurrentPath('/');
+        }}
       />
     );
   }
