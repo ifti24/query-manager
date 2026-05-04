@@ -259,11 +259,10 @@ export default function LandingPage({ onShowPricing, onStartTrial }: LandingPage
               </div>
 
               <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-white leading-[1.05] tracking-tight mb-6">
-                Raise a query.
+                From Query to Resolution,
                 <span className="block text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-400">
-                  Get a real answer.
+                  Fully Tracked.
                 </span>
-                Every time.
               </h1>
 
               <p className="text-xl text-slate-300 leading-relaxed mb-10 max-w-lg">
