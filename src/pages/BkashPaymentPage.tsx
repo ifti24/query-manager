@@ -8,8 +8,8 @@ interface BkashPaymentPageProps {
   onBack: () => void;
 }
 
-const BKASH_NUMBER = '01XXXXXXXXXX';
-const SUPPORT_EMAIL = 'xxx@b.com';
+const BKASH_NUMBER = '01737434318';
+const SUPPORT_EMAIL = 'billing.qp@gmail.com';
 
 const STEPS = [
   {

@@ -5,6 +5,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import TeamMemberPortal from './pages/TeamMemberPortal';
 import PricingPage from './pages/PricingPage';
 import BkashPaymentPage from './pages/BkashPaymentPage';
+import LandingPage from './pages/LandingPage';
 import AccountActivationPage from './pages/AccountActivationPage';
 import LoadingScreen from './components/LoadingScreen';
 import { SessionTimeoutModal } from './components/common/SessionTimeoutModal';
@@ -12,6 +13,8 @@ import { RoleSwitcherModal } from './components/common/RoleSwitcher';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import { supabase } from './lib/supabase';
 import { Clock, LogOut } from 'lucide-react';
+
+const LANDING_PATH = '/team-pulse';
 
 interface SelectedPlan {
   id: string;
@@ -38,11 +41,23 @@ function App() {
     handleTimeout
   );
 
-  const isActivationRoute = window.location.pathname === '/activate' ||
-    new URLSearchParams(window.location.search).has('token');
+  const pathname = window.location.pathname;
+  const searchParams = new URLSearchParams(window.location.search);
 
-  if (isActivationRoute && new URLSearchParams(window.location.search).has('token')) {
+  const isActivationRoute = pathname === '/activate' || searchParams.has('token');
+  const isLandingRoute = pathname === LANDING_PATH;
+
+  if (isActivationRoute && searchParams.has('token')) {
     return <AccountActivationPage />;
+  }
+
+  if (isLandingRoute) {
+    return (
+      <LandingPage
+        onShowPricing={() => setShowPricing(true)}
+        onStartTrial={() => { window.history.pushState({}, '', '/'); window.location.reload(); }}
+      />
+    );
   }
 
   if (loading || (user && roleLoading)) {
