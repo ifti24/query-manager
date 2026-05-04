@@ -51,32 +51,32 @@
 
   <!-- Logo box -->
   <rect x="100" y="200" width="72" height="72" rx="18" fill="#1e293b" stroke="#334155" stroke-width="2"/>
-  <!-- Message square icon approximation -->
+  <!-- Message square icon -->
   <rect x="117" y="215" width="38" height="30" rx="5" fill="#f59e0b"/>
   <polygon points="117,245 117,258 131,245" fill="#f59e0b"/>
 
   <!-- Brand name -->
-  <text x="192" y="248" font-family="system-ui, -apple-system, sans-serif" font-size="56" font-weight="900" fill="#ffffff" letter-spacing="-1">QueryPing</text>
+  <text x="192" y="248" font-family="Liberation Sans, Arial, sans-serif" font-size="56" font-weight="bold" fill="#ffffff" letter-spacing="-1">QueryPing</text>
 
   <!-- Tag line -->
-  <text x="100" y="320" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="400" fill="#94a3b8">From Query to Resolution, Fully Tracked.</text>
+  <text x="100" y="320" font-family="Liberation Sans, Arial, sans-serif" font-size="32" font-weight="normal" fill="#94a3b8">From Query to Resolution, Fully Tracked.</text>
 
   <!-- Accent underline -->
   <rect x="100" y="338" width="420" height="4" rx="2" fill="url(#accent)"/>
 
   <!-- Sub description -->
-  <text x="100" y="396" font-family="system-ui, -apple-system, sans-serif" font-size="22" fill="#64748b">Structured query management for managers who need</text>
-  <text x="100" y="428" font-family="system-ui, -apple-system, sans-serif" font-size="22" fill="#64748b">accountability from their teams — not excuses.</text>
+  <text x="100" y="396" font-family="Liberation Sans, Arial, sans-serif" font-size="22" fill="#64748b">Structured query management for managers who need</text>
+  <text x="100" y="428" font-family="Liberation Sans, Arial, sans-serif" font-size="22" fill="#64748b">accountability from their teams — not excuses.</text>
 
   <!-- Pill badges -->
   <rect x="100" y="472" width="180" height="44" rx="22" fill="#1e3a5f"/>
-  <text x="190" y="499" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#60a5fa" text-anchor="middle" font-weight="600">15-Day Free Trial</text>
+  <text x="190" y="499" font-family="Liberation Sans, Arial, sans-serif" font-size="18" fill="#60a5fa" text-anchor="middle" font-weight="bold">15-Day Free Trial</text>
 
   <rect x="296" y="472" width="160" height="44" rx="22" fill="#2d1f0a"/>
-  <text x="376" y="499" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#fbbf24" text-anchor="middle" font-weight="600">No Credit Card</text>
+  <text x="376" y="499" font-family="Liberation Sans, Arial, sans-serif" font-size="18" fill="#fbbf24" text-anchor="middle" font-weight="bold">No Credit Card</text>
 
   <rect x="472" y="472" width="190" height="44" rx="22" fill="#0f2a1e"/>
-  <text x="567" y="499" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#34d399" text-anchor="middle" font-weight="600">Setup in 2 Minutes</text>
+  <text x="567" y="499" font-family="Liberation Sans, Arial, sans-serif" font-size="18" fill="#34d399" text-anchor="middle" font-weight="bold">Setup in 2 Minutes</text>
 
   <!-- Mock dashboard widget (right side) -->
   <rect x="750" y="150" width="360" height="330" rx="16" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
@@ -86,43 +86,43 @@
   <circle cx="775" cy="176" r="7" fill="#ef4444" opacity="0.7"/>
   <circle cx="798" cy="176" r="7" fill="#f59e0b" opacity="0.7"/>
   <circle cx="821" cy="176" r="7" fill="#22c55e" opacity="0.7"/>
-  <text x="870" y="181" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#475569">queryping.org/dashboard</text>
+  <text x="870" y="181" font-family="Liberation Sans, Arial, sans-serif" font-size="13" fill="#475569">queryping.org/dashboard</text>
 
   <!-- Stat boxes -->
   <rect x="768" y="218" width="100" height="64" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-  <text x="818" y="244" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="800" fill="#fbbf24" text-anchor="middle">9</text>
-  <text x="818" y="268" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Open</text>
+  <text x="818" y="244" font-family="Liberation Sans, Arial, sans-serif" font-size="26" font-weight="bold" fill="#fbbf24" text-anchor="middle">9</text>
+  <text x="818" y="268" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Open</text>
 
   <rect x="880" y="218" width="100" height="64" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-  <text x="930" y="244" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="800" fill="#34d399" text-anchor="middle">31</text>
-  <text x="930" y="268" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Answered</text>
+  <text x="930" y="244" font-family="Liberation Sans, Arial, sans-serif" font-size="26" font-weight="bold" fill="#34d399" text-anchor="middle">31</text>
+  <text x="930" y="268" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Answered</text>
 
   <rect x="992" y="218" width="100" height="64" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-  <text x="1042" y="244" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="800" fill="#f87171" text-anchor="middle">2</text>
-  <text x="1042" y="268" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Overdue</text>
+  <text x="1042" y="244" font-family="Liberation Sans, Arial, sans-serif" font-size="26" font-weight="bold" fill="#f87171" text-anchor="middle">2</text>
+  <text x="1042" y="268" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Overdue</text>
 
   <!-- Query rows -->
   <rect x="768" y="298" width="324" height="44" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-  <text x="784" y="316" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#475569">#Q-22</text>
-  <text x="840" y="316" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#cbd5e1">Shipment delay — April 28</text>
+  <text x="784" y="316" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#475569">#Q-22</text>
+  <text x="840" y="316" font-family="Liberation Sans, Arial, sans-serif" font-size="12" fill="#cbd5e1">Shipment delay — April 28</text>
   <rect x="992" y="304" width="64" height="22" rx="11" fill="#064e3b"/>
-  <text x="1024" y="319" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#34d399" text-anchor="middle" font-weight="600">Answered</text>
-  <text x="784" y="332" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#334155">Assigned to Rafiq A. · 1h ago</text>
+  <text x="1024" y="319" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#34d399" text-anchor="middle" font-weight="bold">Answered</text>
+  <text x="784" y="332" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#334155">Assigned to Rafiq A. · 1h ago</text>
 
   <rect x="768" y="352" width="324" height="44" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-  <text x="784" y="370" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#475569">#Q-21</text>
-  <text x="840" y="370" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#cbd5e1">Vendor payment reconciliation</text>
+  <text x="784" y="370" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#475569">#Q-21</text>
+  <text x="840" y="370" font-family="Liberation Sans, Arial, sans-serif" font-size="12" fill="#cbd5e1">Vendor payment reconciliation</text>
   <rect x="992" y="358" width="64" height="22" rx="11" fill="#451a03"/>
-  <text x="1024" y="373" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#fbbf24" text-anchor="middle" font-weight="600">Pending</text>
-  <text x="784" y="386" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#334155">Assigned to Nadia I. · 4h ago</text>
+  <text x="1024" y="373" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#fbbf24" text-anchor="middle" font-weight="bold">Pending</text>
+  <text x="784" y="386" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#334155">Assigned to Nadia I. · 4h ago</text>
 
   <rect x="768" y="406" width="324" height="44" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-  <text x="784" y="424" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#475569">#Q-20</text>
-  <text x="840" y="424" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#cbd5e1">March stock count discrepancy</text>
+  <text x="784" y="424" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#475569">#Q-20</text>
+  <text x="840" y="424" font-family="Liberation Sans, Arial, sans-serif" font-size="12" fill="#cbd5e1">March stock count discrepancy</text>
   <rect x="992" y="412" width="64" height="22" rx="11" fill="#450a0a"/>
-  <text x="1024" y="427" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#f87171" text-anchor="middle" font-weight="600">Overdue</text>
-  <text x="784" y="440" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#334155">Assigned to Mahbub H. · 2d ago</text>
+  <text x="1024" y="427" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#f87171" text-anchor="middle" font-weight="bold">Overdue</text>
+  <text x="784" y="440" font-family="Liberation Sans, Arial, sans-serif" font-size="11" fill="#334155">Assigned to Mahbub H. · 2d ago</text>
 
   <!-- Bottom domain -->
-  <text x="600" y="590" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#334155" text-anchor="middle" font-weight="500">queryping.org</text>
+  <text x="600" y="590" font-family="Liberation Sans, Arial, sans-serif" font-size="20" fill="#334155" text-anchor="middle" font-weight="normal">queryping.org</text>
 </svg>
