@@ -95,11 +95,18 @@ Deno.serve(async (req: Request) => {
 
       if (pwError) throw pwError;
 
-      // Mark token as used
+      // Mark token as used and mark the user's email as verified.
+      // Invited members activate via this flow (not the email_verification_tokens
+      // flow), so we must set email_verified_at here or they will be blocked at login.
       await serviceClient
         .from("invitation_tokens")
         .update({ is_used: true })
         .eq("id", invite.id);
+
+      await serviceClient
+        .from("profiles")
+        .update({ email_verified_at: new Date().toISOString() })
+        .eq("id", invite.user_id);
 
       return new Response(JSON.stringify({ success: true }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

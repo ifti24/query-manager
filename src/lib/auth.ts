@@ -43,6 +43,13 @@ export class EmailNotVerifiedError extends Error {
   }
 }
 
+export class AccountNotActivatedError extends Error {
+  constructor(message = 'Your account has not been activated yet. Please check your email for the activation link.') {
+    super(message);
+    this.name = 'AccountNotActivatedError';
+  }
+}
+
 export async function signIn(email: string, password: string) {
   console.log('[auth:signIn] Attempting sign in for:', email);
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -68,6 +75,32 @@ export async function signIn(email: string, password: string) {
         metadata: { email },
       });
     }
+
+    // On credential failure, check if the email belongs to an invited member who
+    // hasn't activated yet (unused, non-expired invitation token). If so, surface
+    // a clearer message instead of the generic "Invalid login credentials".
+    if (error.status === 400 || error.message?.toLowerCase().includes('invalid login')) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (profile?.id) {
+        const { data: token } = await supabase
+          .from('invitation_tokens')
+          .select('id, expires_at')
+          .eq('user_id', profile.id)
+          .eq('is_used', false)
+          .gt('expires_at', new Date().toISOString())
+          .maybeSingle();
+
+        if (token) {
+          throw new AccountNotActivatedError();
+        }
+      }
+    }
+
     throw error;
   }
 

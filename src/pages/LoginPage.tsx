@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Mail, Lock, User, Building2, CircleUser as UserCircle, Users, ChevronRight, ChevronLeft, Check, AlertCircle } from 'lucide-react';
-import { signIn, signUp } from '../lib/auth';
+import { Mail, Lock, User, Building2, CircleUser as UserCircle, Users, ChevronRight, ChevronLeft, Check, AlertCircle, Link as LinkIcon } from 'lucide-react';
+import { signIn, signUp, AccountNotActivatedError } from '../lib/auth';
 import { PasswordStrengthIndicator } from '../components/auth/PasswordStrengthIndicator';
 import { supabase } from '../lib/supabase';
 import { getPasswordPolicy, validatePassword, PasswordPolicy } from '../lib/passwordPolicy';
@@ -34,6 +34,7 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [notActivated, setNotActivated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicy | null>(null);
 
@@ -167,11 +168,16 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
   const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setNotActivated(false);
     setLoading(true);
     try {
       await signIn(email, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      if (err instanceof AccountNotActivatedError) {
+        setNotActivated(true);
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      }
     } finally {
       setLoading(false);
     }
@@ -334,6 +340,7 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
               email={email}
               password={password}
               error={error}
+              notActivated={notActivated}
               loading={loading}
               setEmail={setEmail}
               setPassword={setPassword}
@@ -379,6 +386,7 @@ interface SignInFormProps {
   email: string;
   password: string;
   error: string;
+  notActivated: boolean;
   loading: boolean;
   setEmail: (v: string) => void;
   setPassword: (v: string) => void;
@@ -386,10 +394,24 @@ interface SignInFormProps {
   onForgotPassword: () => void;
 }
 
-function SignInForm({ email, password, error, loading, setEmail, setPassword, onSubmit, onForgotPassword }: SignInFormProps) {
+function SignInForm({ email, password, error, notActivated, loading, setEmail, setPassword, onSubmit, onForgotPassword }: SignInFormProps) {
   return (
     <>
       <p className="text-slate-700 font-bold mb-6 text-lg">Sign in to your account</p>
+
+      {notActivated && (
+        <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex items-start gap-3">
+            <LinkIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-amber-900 text-sm font-semibold mb-1">Account not activated yet</p>
+              <p className="text-amber-800 text-sm leading-relaxed">
+                Please check your email for the activation link and set your password before signing in. If the link has expired, contact your administrator for a new invite.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-5 p-3.5 bg-red-50 border border-red-200 rounded-lg">
