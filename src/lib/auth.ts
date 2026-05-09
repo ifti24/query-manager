@@ -10,15 +10,17 @@ export interface SignUpPayload {
   accountDisplayName: string;
   expectedSupervisorCount: number;
   expectedMemberCount: number;
+  emailRedirectTo?: string;
 }
 
 export async function signUp(payload: SignUpPayload) {
-  const { email, password, fullName, mobileNumber, accountType, accountDisplayName, expectedSupervisorCount, expectedMemberCount } = payload;
+  const { email, password, fullName, mobileNumber, accountType, accountDisplayName, expectedSupervisorCount, expectedMemberCount, emailRedirectTo } = payload;
 
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
+      emailRedirectTo,
       data: {
         full_name: fullName,
         mobile_number: mobileNumber,

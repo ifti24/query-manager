@@ -37,12 +37,6 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
       show: isAccountOwner || isSupervisor,
     },
     {
-      id: 'settings',
-      label: 'Settings',
-      icon: <Settings className="w-5 h-5" />,
-      show: isAccountOwner || isPlatformAdmin,
-    },
-    {
       id: 'subscription',
       label: 'Subscription',
       icon: <CreditCard className="w-5 h-5" />,
@@ -59,6 +53,12 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
       label: 'Audit Log',
       icon: <ShieldAlert className="w-5 h-5" />,
       show: isPlatformAdmin,
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: <Settings className="w-5 h-5" />,
+      show: isAccountOwner || isPlatformAdmin,
     },
   ];
 

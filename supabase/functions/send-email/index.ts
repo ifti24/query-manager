@@ -8,6 +8,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const FROM_ADDRESS = "QueryPing Notifications <no-reply.queryping@gmail.com>";
+
 interface EmailRequest {
   to: string;
   subject: string;
@@ -17,10 +19,7 @@ interface EmailRequest {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
@@ -31,10 +30,7 @@ Deno.serve(async (req: Request) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return new Response(
         JSON.stringify({ error: "Missing or invalid authorization header" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -47,10 +43,7 @@ Deno.serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -67,10 +60,7 @@ Deno.serve(async (req: Request) => {
     if (profileError || !profile) {
       return new Response(
         JSON.stringify({ error: "Forbidden: user profile not found" }),
-        {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -86,87 +76,56 @@ Deno.serve(async (req: Request) => {
     if (!to || !subject || !html) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: to, subject, html" }),
-        {
-          status: 400,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: gmailUser,
-        pass: gmailPassword,
-      },
+      service: "gmail",
+      auth: { user: gmailUser, pass: gmailPassword },
     });
-
-    let emailStatus = "failed";
-    let errorMessage = null;
 
     try {
       const info = await transporter.sendMail({
-        from: from || gmailUser,
-        to: to,
-        subject: subject,
-        html: html,
+        from: from || FROM_ADDRESS,
+        to,
+        subject,
+        html,
       });
-
-      emailStatus = "sent";
 
       await serviceClient.from("email_logs").insert({
         recipient: to,
-        subject: subject,
-        status: emailStatus,
+        recipient_email: to,
+        subject,
+        status: "sent",
         sent_at: new Date().toISOString(),
+        email_type: "manual",
         message_id: info.messageId,
       });
 
       return new Response(
-        JSON.stringify({
-          success: true,
-          message: "Email sent successfully",
-          messageId: info.messageId,
-          recipientEmail: to,
-        }),
-        {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
+        JSON.stringify({ success: true, message: "Email sent successfully", messageId: info.messageId, recipientEmail: to }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
-    } catch (sendError) {
-      emailStatus = "failed";
-      errorMessage = sendError.message || sendError.toString();
+    } catch (sendError: any) {
+      const errorMessage = sendError?.message ?? String(sendError);
 
       await serviceClient.from("email_logs").insert({
         recipient: to,
-        subject: subject,
-        status: emailStatus,
+        recipient_email: to,
+        subject,
+        status: "failed",
         sent_at: new Date().toISOString(),
+        email_type: "manual",
         error_message: errorMessage,
       });
 
       throw sendError;
     }
-  } catch (error) {
+  } catch (error: any) {
     return new Response(
-      JSON.stringify({
-        error: error.message || "Internal server error",
-        details: error.toString()
-      }),
-      {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      }
+      JSON.stringify({ error: error?.message || "Internal server error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

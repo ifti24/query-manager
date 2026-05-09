@@ -14,6 +14,8 @@ import {
   ChevronUp,
   Hourglass,
   User,
+  UserX,
+  UsersRound,
 } from 'lucide-react';
 import { usePlatformStats } from './usePlatformStats';
 import type { AccountSummary } from './usePlatformStats';
@@ -23,6 +25,8 @@ import AccountsTable from './AccountsTable';
 import ActivityLeaderboard from './ActivityLeaderboard';
 import StatCarousel from './StatCarousel';
 import AccountOwnerDetailModal from './AccountOwnerDetailModal';
+import UnverifiedSignupsTable from './UnverifiedSignupsTable';
+import OtherUsersTable from './OtherUsersTable';
 
 interface BigStatTileProps {
   label: string;
@@ -57,6 +61,7 @@ export default function PlatformDashboard() {
   const { overview, loading, error, refresh } = usePlatformStats();
   const [showAlerts, setShowAlerts] = useState(true);
   const [selectedAccount, setSelectedAccount] = useState<AccountSummary | null>(null);
+  const [drilldownTab, setDrilldownTab] = useState<'accounts' | 'unverified' | 'others'>('accounts');
 
   if (loading) {
     return (
@@ -267,12 +272,81 @@ export default function PlatformDashboard() {
 
       {/* Section 4: Accounts drilldown table */}
       <div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Account Drilldown</p>
-        <AccountsTable
-          accounts={overview.accounts}
-          totalQueries={overview.totalQueries}
-          onSelectAccount={setSelectedAccount}
-        />
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Account Drilldown</p>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-xl w-fit">
+          <button
+            onClick={() => setDrilldownTab('accounts')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-150 ${
+              drilldownTab === 'accounts'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            Company / Accounts
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+              drilldownTab === 'accounts' ? 'bg-slate-100 text-slate-600' : 'bg-slate-200 text-slate-500'
+            }`}>
+              {overview.totalAccounts}
+            </span>
+          </button>
+          <button
+            onClick={() => setDrilldownTab('unverified')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-150 ${
+              drilldownTab === 'unverified'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <UserX className="w-3.5 h-3.5" />
+            Unverified Signups
+            {overview.unverifiedSignups.length > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                drilldownTab === 'unverified'
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-amber-100 text-amber-600'
+              }`}>
+                {overview.unverifiedSignups.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setDrilldownTab('others')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-150 ${
+              drilldownTab === 'others'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <UsersRound className="w-3.5 h-3.5" />
+            Others
+            {overview.otherUsers.length > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                drilldownTab === 'others'
+                  ? 'bg-slate-100 text-slate-600'
+                  : 'bg-slate-200 text-slate-500'
+              }`}>
+                {overview.otherUsers.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {drilldownTab === 'accounts' ? (
+          <AccountsTable
+            accounts={overview.accounts}
+            totalQueries={overview.totalQueries}
+            onSelectAccount={setSelectedAccount}
+          />
+        ) : drilldownTab === 'unverified' ? (
+          <UnverifiedSignupsTable signups={overview.unverifiedSignups} />
+        ) : (
+          <OtherUsersTable users={overview.otherUsers} />
+        )}
       </div>
 
       {selectedAccount && (

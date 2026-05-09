@@ -291,12 +291,15 @@ export default function AccountNotificationSettings({
     setSendingDigest(true);
     setDigestFeedback('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not authenticated');
+
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-daily-reminders`;
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ triggered_by: 'admin', account_id: accountId }),
       });

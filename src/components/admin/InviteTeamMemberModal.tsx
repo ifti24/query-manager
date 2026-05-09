@@ -30,7 +30,8 @@ const GENDER_OPTIONS = [
 ];
 
 export default function InviteTeamMemberModal({ onClose, onCreated }: InviteTeamMemberModalProps) {
-  const { activeRole } = useAuth();
+  const { activeRole, profile } = useAuth();
+  const isIndividualAccount = profile?.account_type === 'individual';
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [designation, setDesignation] = useState('');
@@ -59,10 +60,10 @@ export default function InviteTeamMemberModal({ onClose, onCreated }: InviteTeam
   }, [accountId]);
 
   useEffect(() => {
-    if (role === 'member' && accountId) {
+    if (role === 'member' && accountId && !isIndividualAccount) {
       fetchSupervisors();
     }
-  }, [role, accountId]);
+  }, [role, accountId, isIndividualAccount]);
 
   const fetchOrgData = async () => {
     if (!accountId) return;
@@ -104,7 +105,7 @@ export default function InviteTeamMemberModal({ onClose, onCreated }: InviteTeam
     setError('');
 
     if (!accountId) { setError('No account context found.'); return; }
-    if (role === 'member' && !supervisorId) { setError('Please select a supervisor for this member.'); return; }
+    if (role === 'member' && !isIndividualAccount && !supervisorId) { setError('Please select a supervisor for this member.'); return; }
     if (!employeeId.trim()) { setError('Employee ID is required.'); return; }
     if (employeeId.trim().toLowerCase().startsWith('sys:')) {
       setError('Employee ID cannot start with "sys:". Please enter a valid ID.');
@@ -270,18 +271,27 @@ export default function InviteTeamMemberModal({ onClose, onCreated }: InviteTeam
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
                   Role <span className="text-red-500">*</span>
                 </label>
-                <div className="relative">
-                  <Users className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                  <select
-                    value={role}
-                    onChange={e => { setRole(e.target.value as InviteRole); setSupervisorId(''); }}
-                    className="w-full pl-9 pr-9 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-slate-600 focus:ring-2 focus:ring-slate-100 bg-white appearance-none"
-                  >
-                    <option value="member">Member</option>
-                    <option value="supervisor">Supervisor</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
+                {isIndividualAccount ? (
+                  <div className="relative">
+                    <Users className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                    <div className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-600 bg-slate-50 select-none">
+                      Member
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Users className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                    <select
+                      value={role}
+                      onChange={e => { setRole(e.target.value as InviteRole); setSupervisorId(''); }}
+                      className="w-full pl-9 pr-9 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-slate-600 focus:ring-2 focus:ring-slate-100 bg-white appearance-none"
+                    >
+                      <option value="member">Member</option>
+                      <option value="supervisor">Supervisor</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -359,8 +369,8 @@ export default function InviteTeamMemberModal({ onClose, onCreated }: InviteTeam
               </div>
             </div>
 
-            {/* Supervisor assignment — only for members */}
-            {role === 'member' && (
+            {/* Supervisor assignment — only for members in business accounts */}
+            {role === 'member' && !isIndividualAccount && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
                   Assign Supervisor <span className="text-red-500">*</span>
@@ -419,7 +429,7 @@ export default function InviteTeamMemberModal({ onClose, onCreated }: InviteTeam
                 Cancel
               </button>
               <button type="submit"
-                disabled={loading || (role === 'member' && supervisors.length === 0)}
+                disabled={loading || (role === 'member' && !isIndividualAccount && supervisors.length === 0)}
                 className="px-5 py-2 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors font-medium disabled:bg-slate-300 disabled:cursor-not-allowed">
                 {loading ? 'Sending Invite...' : 'Send Invite'}
               </button>

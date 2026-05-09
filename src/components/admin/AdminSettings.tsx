@@ -16,6 +16,7 @@ const DEFAULT_PLATFORM_FORM = {
   session_warning_seconds: 60,
   password_reset_link_validity_hours: 24,
   invite_link_validity_hours: 24,
+  require_email_verification: false,
   password_min_length: 8,
   password_max_length: 128,
   password_require_uppercase: true,
@@ -71,6 +72,7 @@ export default function AdminSettingsComponent({ onShowPricing }: AdminSettingsP
           const { data } = await supabase
             .from('admin_settings')
             .select('*')
+            .is('account_id', null)
             .maybeSingle();
 
           if (data) {
@@ -84,6 +86,7 @@ export default function AdminSettingsComponent({ onShowPricing }: AdminSettingsP
               session_warning_seconds: data.session_warning_seconds || 60,
               password_reset_link_validity_hours: data.password_reset_link_validity_hours || 24,
               invite_link_validity_hours: (data as any).invite_link_validity_hours || 24,
+              require_email_verification: data.require_email_verification ?? false,
               password_min_length: data.password_min_length || 8,
               password_max_length: data.password_max_length || 128,
               password_require_uppercase: data.password_require_uppercase ?? true,
@@ -168,21 +171,24 @@ export default function AdminSettingsComponent({ onShowPricing }: AdminSettingsP
         if (f.session_warning_seconds !== o.session_warning_seconds) updateData.session_warning_seconds = f.session_warning_seconds;
         if (f.password_reset_link_validity_hours !== o.password_reset_link_validity_hours) updateData.password_reset_link_validity_hours = f.password_reset_link_validity_hours;
         if (f.invite_link_validity_hours !== o.invite_link_validity_hours) updateData.invite_link_validity_hours = f.invite_link_validity_hours;
-        if (f.password_min_length !== o.password_min_length) updateData.password_min_length = f.password_min_length;
-        if (f.password_max_length !== o.password_max_length) updateData.password_max_length = f.password_max_length;
-        if (f.password_require_uppercase !== o.password_require_uppercase) updateData.password_require_uppercase = f.password_require_uppercase;
-        if (f.password_min_uppercase !== o.password_min_uppercase) updateData.password_min_uppercase = f.password_min_uppercase;
-        if (f.password_require_lowercase !== o.password_require_lowercase) updateData.password_require_lowercase = f.password_require_lowercase;
-        if (f.password_min_lowercase !== o.password_min_lowercase) updateData.password_min_lowercase = f.password_min_lowercase;
-        if (f.password_require_numbers !== o.password_require_numbers) updateData.password_require_numbers = f.password_require_numbers;
-        if (f.password_min_numbers !== o.password_min_numbers) updateData.password_min_numbers = f.password_min_numbers;
-        if (f.password_require_special !== o.password_require_special) updateData.password_require_special = f.password_require_special;
-        if (f.password_min_special !== o.password_min_special) updateData.password_min_special = f.password_min_special;
-        if (f.password_allowed_special_chars !== o.password_allowed_special_chars) updateData.password_allowed_special_chars = f.password_allowed_special_chars;
-        if (JSON.stringify(f.password_policy_applies_to.sort()) !== JSON.stringify(o.password_policy_applies_to.sort())) updateData.password_policy_applies_to = f.password_policy_applies_to;
+        if (f.require_email_verification !== o.require_email_verification) updateData.require_email_verification = f.require_email_verification;
+        // Always include all password policy fields unconditionally — avoids
+        // stale-baseline bugs where the diff detects "no change" on fields that
+        // actually differ from the DB value.
+        updateData.password_min_length = f.password_min_length;
+        updateData.password_max_length = f.password_max_length;
+        updateData.password_require_uppercase = f.password_require_uppercase;
+        updateData.password_min_uppercase = f.password_min_uppercase;
+        updateData.password_require_lowercase = f.password_require_lowercase;
+        updateData.password_min_lowercase = f.password_min_lowercase;
+        updateData.password_require_numbers = f.password_require_numbers;
+        updateData.password_min_numbers = f.password_min_numbers;
+        updateData.password_require_special = f.password_require_special;
+        updateData.password_min_special = f.password_min_special;
+        updateData.password_allowed_special_chars = f.password_allowed_special_chars;
+        updateData.password_policy_applies_to = f.password_policy_applies_to;
 
-        if (Object.keys(updateData).length === 0) { setSuccess('No changes to save'); setSaving(false); return; }
-        const { error: saveError } = await supabase.from('admin_settings').update(updateData).eq('id', settings.id);
+        const { error: saveError } = await supabase.from('admin_settings').update(updateData).is('account_id', null);
         if (saveError) throw saveError;
         setOriginalPlatformForm(f);
 
@@ -281,6 +287,43 @@ export default function AdminSettingsComponent({ onShowPricing }: AdminSettingsP
 
       {/* Platform-admin-only settings */}
       {isPlatformAdmin && <>
+
+      {/* Email Verification Toggle — top-level, always visible */}
+      <div className="bg-white rounded-lg border border-slate-200 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <Shield className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-slate-800 font-semibold text-sm">Require Email Verification on Signup</p>
+              <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">
+                When enabled, new account owners must verify their email before they can log in. They will receive a 24-hour verification link.
+              </p>
+              {platformForm.require_email_verification && (
+                <p className="text-amber-700 text-xs mt-2 font-medium">
+                  Active — new signups cannot log in until they click the verification link.
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPlatformForm(f => ({ ...f, require_email_verification: !f.require_email_verification }))}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none mt-0.5 ${
+              platformForm.require_email_verification ? 'bg-slate-800' : 'bg-slate-200'
+            }`}
+            role="switch"
+            aria-checked={platformForm.require_email_verification}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+                platformForm.require_email_verification ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
 
       {/* File Settings */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -418,6 +461,38 @@ export default function AdminSettingsComponent({ onShowPricing }: AdminSettingsP
               />
               <p className="text-slate-600 text-sm mt-1">Team member invitation links will expire after this many hours (max 168 = 7 days)</p>
             </div>
+
+            <div className="border border-slate-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-700 font-medium">Require Email Verification on Signup</p>
+                  <p className="text-slate-500 text-sm mt-0.5">
+                    When enabled, new account owners must verify their email before they can log in. They will receive a verification link valid for 24 hours.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPlatformForm(f => ({ ...f, require_email_verification: !f.require_email_verification }))}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                    platformForm.require_email_verification ? 'bg-slate-800' : 'bg-slate-200'
+                  }`}
+                  role="switch"
+                  aria-checked={platformForm.require_email_verification}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+                      platformForm.require_email_verification ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+              {platformForm.require_email_verification && (
+                <div className="mt-3 flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+                  <Shield className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                  <p className="text-xs text-amber-700">New signups will not be able to log in until they click the verification link sent to their email.</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -441,7 +516,7 @@ export default function AdminSettingsComponent({ onShowPricing }: AdminSettingsP
               <label className="block text-slate-700 font-medium mb-2">Apply Password Policy To</label>
               <div className="space-y-2">
                 {[
-                  { key: 'admin', label: 'Admin' },
+                  { key: 'admin', label: 'Account Owner / Supervisor' },
                   { key: 'team_member', label: 'Team Member' },
                 ].map(role => (
                   <label key={role.key} className="flex items-center space-x-3 p-3 border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer">

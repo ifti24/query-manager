@@ -123,7 +123,7 @@ export function validatePassword(password: string, policy: PasswordPolicy, userR
 
   if (policy.password_require_special) {
     const specialChars = policy.password_allowed_special_chars;
-    const escapedSpecialChars = specialChars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedSpecialChars = specialChars.replace(/[-[\]^\\]/g, '\\$&').replace(/[.*+?${}()|]/g, '\\$&');
     const specialRegex = new RegExp(`[${escapedSpecialChars}]`, 'g');
     const specialCount = (password.match(specialRegex) || []).length;
 
@@ -172,7 +172,7 @@ export function getPasswordStrength(password: string, policy: PasswordPolicy): n
 
   if (policy.password_require_special) {
     const specialChars = policy.password_allowed_special_chars;
-    const escapedSpecialChars = specialChars.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedSpecialChars = specialChars.replace(/[-[\]^\\]/g, '\\$&').replace(/[.*+?${}()|]/g, '\\$&');
     const specialRegex = new RegExp(`[${escapedSpecialChars}]`, 'g');
     const specialCount = (password.match(specialRegex) || []).length;
 

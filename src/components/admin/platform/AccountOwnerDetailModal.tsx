@@ -64,6 +64,13 @@ const statusConfig = {
   expired: { label: 'Link Expired', classes: 'bg-amber-50 text-amber-700 border-amber-200', icon: <AlertCircle className="w-3 h-3" /> },
 };
 
+const statusReasonMap: Record<OrgUser['accountStatus'], string> = {
+  active: 'Logged in and active',
+  inactive: 'Account has been deactivated by the owner',
+  invited: 'Invitation sent — awaiting first login to activate',
+  expired: 'Invitation link expired before the user logged in',
+};
+
 const subStatusConfig: Record<string, { label: string; classes: string }> = {
   active: { label: 'Active', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   trial: { label: 'Trial', classes: 'bg-sky-50 text-sky-700 border-sky-200' },
@@ -257,11 +264,13 @@ function UserDetailPanel({ user, onBack }: { user: OrgUser; onBack: () => void }
         </div>
       )}
 
-      <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl">
-        <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+      <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${user.accountStatus === 'active' ? 'bg-slate-50 border-slate-100' : 'bg-amber-50 border-amber-100'}`}>
+        <Calendar className={`w-4 h-4 flex-shrink-0 ${user.accountStatus === 'active' ? 'text-slate-400' : 'text-amber-500'}`} />
         <div>
           <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Account Status</p>
-          <p className="text-sm font-bold text-slate-700 mt-0.5">{user.is_active ? 'Active account' : 'Deactivated account'}</p>
+          <p className={`text-sm font-bold mt-0.5 ${user.accountStatus === 'active' ? 'text-slate-700' : 'text-amber-800'}`}>
+            {statusReasonMap[user.accountStatus]}
+          </p>
         </div>
       </div>
     </div>
@@ -287,11 +296,17 @@ function SupervisorNode({ supervisor, onSelectUser }: { supervisor: OrgUser; onS
               {supervisor.full_name || supervisor.email}
             </p>
             <p className="text-xs text-slate-400 truncate">{supervisor.email}</p>
+            {supervisor.accountStatus !== 'active' && (
+              <p className="text-xs mt-0.5 text-amber-600 font-medium">
+                {statusReasonMap[supervisor.accountStatus]}
+              </p>
+            )}
           </button>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {!supervisor.is_active && (
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-100">Inactive</span>
-            )}
+            <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusConfig[supervisor.accountStatus].classes}`}>
+              {statusConfig[supervisor.accountStatus].icon}
+              {statusConfig[supervisor.accountStatus].label}
+            </span>
             {hasMembers ? (
               <button
                 onClick={() => setExpanded(v => !v)}
@@ -326,6 +341,11 @@ function SupervisorNode({ supervisor, onSelectUser }: { supervisor: OrgUser; onS
                       {member.full_name || member.email}
                     </p>
                     <p className="text-xs text-slate-400 truncate">{member.email}</p>
+                    {member.accountStatus !== 'active' && (
+                      <p className="text-xs mt-0.5 text-amber-600 font-medium">
+                        {statusReasonMap[member.accountStatus]}
+                      </p>
+                    )}
                   </button>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusConfig[member.accountStatus].classes}`}>
@@ -1303,6 +1323,11 @@ export default function AccountOwnerDetailModal({ account, onClose }: AccountOwn
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-slate-800 truncate">{m.full_name || m.email}</p>
                                 <p className="text-xs text-slate-400 truncate">{m.email}</p>
+                                {m.accountStatus !== 'active' && (
+                                  <p className="text-xs mt-0.5 text-amber-600 font-medium">
+                                    {statusReasonMap[m.accountStatus]}
+                                  </p>
+                                )}
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
                                 <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusConfig[m.accountStatus].classes}`}>

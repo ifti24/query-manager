@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, Lock, User, Building2, CircleUser as UserCircle, Users, ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { Mail, Lock, User, Building2, CircleUser as UserCircle, Users, ChevronRight, ChevronLeft, Check, AlertCircle } from 'lucide-react';
 import { signIn, signUp } from '../lib/auth';
 import { PasswordStrengthIndicator } from '../components/auth/PasswordStrengthIndicator';
 import { supabase } from '../lib/supabase';
@@ -29,6 +29,7 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [signUpSuccess, setSignUpSuccess] = useState(false);
+  const [signUpRequiredVerification, setSignUpRequiredVerification] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,7 +38,7 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
   const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicy | null>(null);
 
   const [formData, setFormData] = useState<SignUpFormData>({
-    accountType: 'business',
+    accountType: 'individual',
     accountDisplayName: '',
     email: '',
     mobileNumber: '',
@@ -67,9 +68,9 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
       if (!formData.accountDisplayName.trim()) {
         return formData.accountType === 'business'
           ? 'Company name is required.'
-          : 'Owner name is required.';
+          : 'Your full name is required.';
       }
-      if (!formData.expectedSupervisorCount || parseInt(formData.expectedSupervisorCount) < 1) {
+      if (formData.accountType === 'business' && (!formData.expectedSupervisorCount || parseInt(formData.expectedSupervisorCount) < 1)) {
         return 'Expected supervisor count must be at least 1.';
       }
       if (!formData.expectedMemberCount || parseInt(formData.expectedMemberCount) < 1) {
@@ -80,8 +81,8 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
       if (!formData.email.trim()) return 'Email address is required.';
       if (!formData.mobileNumber.trim()) return 'Mobile number is required.';
       if (!formData.password) return 'Password is required.';
-      if (passwordPolicy && passwordPolicy.password_policy_applies_to.includes('member')) {
-        const validation = validatePassword(formData.password, passwordPolicy, 'member');
+      if (passwordPolicy) {
+        const validation = validatePassword(formData.password, passwordPolicy);
         if (!validation.valid) return validation.errors.join('. ');
       }
       if (!formData.confirmPassword) return 'Please confirm your password.';
@@ -109,7 +110,14 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
     setError('');
     setLoading(true);
     try {
-      await signUp({
+      // Fetch platform verification setting before signing up
+      const { data: settingsData } = await supabase
+        .from('admin_settings')
+        .select('require_email_verification')
+        .maybeSingle();
+      const requireVerification = settingsData?.require_email_verification ?? false;
+
+      const data = await signUp({
         email: formData.email,
         password: formData.password,
         fullName: formData.accountDisplayName,
@@ -118,7 +126,29 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
         accountDisplayName: formData.accountDisplayName,
         expectedSupervisorCount: parseInt(formData.expectedSupervisorCount) || 0,
         expectedMemberCount: parseInt(formData.expectedMemberCount) || 0,
+        emailRedirectTo: requireVerification ? window.location.origin : undefined,
       });
+
+      if (data.user) {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        await fetch(`${supabaseUrl}/functions/v1/signup-profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: data.user.id,
+            email: formData.email,
+            fullName: formData.accountDisplayName,
+            mobileNumber: formData.mobileNumber,
+            accountType: formData.accountType,
+            accountDisplayName: formData.accountDisplayName,
+            expectedSupervisorCount: parseInt(formData.expectedSupervisorCount) || 0,
+            expectedMemberCount: parseInt(formData.expectedMemberCount) || 0,
+            appUrl: window.location.origin,
+          }),
+        });
+      }
+
+      setSignUpRequiredVerification(requireVerification);
       setSignUpSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -143,7 +173,7 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
   const resetSignUp = () => {
     setCurrentStep(0);
     setFormData({
-      accountType: 'business',
+      accountType: 'individual',
       accountDisplayName: '',
       email: '',
       mobileNumber: '',
@@ -158,35 +188,93 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
   if (signUpSuccess) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           <div className="text-center px-8 pt-8 pb-6 border-b border-slate-100">
             <h1 className="text-3xl font-bold text-slate-900 mb-1">QueryPing</h1>
             <p className="text-xs text-slate-400 tracking-wide">Never miss a pending query</p>
           </div>
-          <div className="px-8 py-10 text-center">
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
-              <Check className="w-8 h-8 text-emerald-600" />
+
+          {signUpRequiredVerification ? (
+            /* Verification required — user must verify before logging in */
+            <div className="px-8 py-8">
+              <div className="flex justify-center mb-5">
+                <div className="w-16 h-16 bg-amber-50 border-2 border-amber-200 rounded-full flex items-center justify-center">
+                  <Mail className="w-8 h-8 text-amber-500" />
+                </div>
+              </div>
+
+              <h2 className="text-xl font-bold text-slate-900 text-center mb-1">Verify Your Email to Continue</h2>
+              <p className="text-slate-500 text-sm text-center mb-6">
+                Account created for <span className="font-semibold text-slate-700">{formData.accountDisplayName}</span>
+              </p>
+
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl mb-5">
+                <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800 mb-1">Email verification is required</p>
+                  <p className="text-sm text-amber-700 leading-relaxed">
+                    You <strong>cannot log in</strong> until you verify your email address. We sent a verification link to{' '}
+                    <span className="font-semibold">{formData.email}</span>.
+                  </p>
+                </div>
+              </div>
+
+              <ol className="space-y-3 mb-7">
+                {[
+                  { step: '1', text: 'Open your email inbox' },
+                  { step: '2', text: 'Find the email from QueryPing Notifications' },
+                  { step: '3', text: 'Click "Verify My Account" — the link expires in 24 hours' },
+                  { step: '4', text: 'You will be redirected back here to sign in' },
+                ].map(({ step, text }) => (
+                  <li key={step} className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-full bg-slate-800 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{step}</span>
+                    <span className="text-sm text-slate-600">{text}</span>
+                  </li>
+                ))}
+              </ol>
+
+              <p className="text-xs text-slate-400 text-center leading-relaxed">
+                Didn't receive an email? Check your spam folder or contact{' '}
+                <a href="mailto:support.queryping@gmail.com" className="text-slate-500 hover:text-slate-700 underline underline-offset-2">
+                  support.queryping@gmail.com
+                </a>
+              </p>
             </div>
-            <h2 className="text-xl font-bold text-slate-900 mb-2">Account Created Successfully</h2>
-            <p className="text-slate-500 text-sm leading-relaxed mb-2">
-              Your account for <span className="font-semibold text-slate-700">{formData.accountDisplayName}</span> has been created.
-            </p>
-            <p className="text-slate-500 text-sm leading-relaxed mb-8">
-              You can now sign in with your email and password.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setSignUpSuccess(false);
-                setIsSignUp(false);
-                setEmail(formData.email);
-                resetSignUp();
-              }}
-              className="w-full bg-slate-800 text-white py-2.5 rounded-lg font-medium hover:bg-slate-900 transition-colors text-sm"
-            >
-              Go to Sign In
-            </button>
-          </div>
+          ) : (
+            /* No verification required — user can log in immediately */
+            <div className="px-8 py-8">
+              <div className="flex justify-center mb-5">
+                <div className="w-16 h-16 bg-emerald-50 border-2 border-emerald-200 rounded-full flex items-center justify-center">
+                  <Check className="w-8 h-8 text-emerald-500" />
+                </div>
+              </div>
+
+              <h2 className="text-xl font-bold text-slate-900 text-center mb-1">Account Created!</h2>
+              <p className="text-slate-500 text-sm text-center mb-6">
+                Your account for <span className="font-semibold text-slate-700">{formData.accountDisplayName}</span> is ready.
+              </p>
+
+              <div className="flex items-start gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl mb-6">
+                <Mail className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  A welcome email has been sent to <span className="font-semibold text-slate-700">{formData.email}</span> with your account details.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSignUpSuccess(false);
+                  setIsSignUp(false);
+                  setEmail(formData.email);
+                  resetSignUp();
+                }}
+                className="w-full bg-slate-800 text-white py-2.5 rounded-lg font-medium hover:bg-slate-900 transition-colors text-sm"
+              >
+                Sign In Now
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -445,25 +533,6 @@ function StepAccountType({ formData, updateField }: { formData: SignUpFormData; 
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"
-          onClick={() => updateField('accountType', 'business')}
-          className={`relative p-5 rounded-xl border-2 text-left transition-all duration-150 ${
-            formData.accountType === 'business'
-              ? 'border-slate-800 bg-slate-50'
-              : 'border-slate-200 hover:border-slate-300 bg-white'
-          }`}
-        >
-          {formData.accountType === 'business' && (
-            <span className="absolute top-2.5 right-2.5 w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center">
-              <Check className="w-3 h-3 text-white" />
-            </span>
-          )}
-          <Building2 className={`w-7 h-7 mb-3 ${formData.accountType === 'business' ? 'text-slate-800' : 'text-slate-400'}`} />
-          <p className={`font-semibold text-sm ${formData.accountType === 'business' ? 'text-slate-800' : 'text-slate-600'}`}>Business</p>
-          <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">For companies and organisations</p>
-        </button>
-
-        <button
-          type="button"
           onClick={() => updateField('accountType', 'individual')}
           className={`relative p-5 rounded-xl border-2 text-left transition-all duration-150 ${
             formData.accountType === 'individual'
@@ -479,6 +548,25 @@ function StepAccountType({ formData, updateField }: { formData: SignUpFormData; 
           <UserCircle className={`w-7 h-7 mb-3 ${formData.accountType === 'individual' ? 'text-slate-800' : 'text-slate-400'}`} />
           <p className={`font-semibold text-sm ${formData.accountType === 'individual' ? 'text-slate-800' : 'text-slate-600'}`}>Individual</p>
           <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">For solo professionals</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => updateField('accountType', 'business')}
+          className={`relative p-5 rounded-xl border-2 text-left transition-all duration-150 ${
+            formData.accountType === 'business'
+              ? 'border-slate-800 bg-slate-50'
+              : 'border-slate-200 hover:border-slate-300 bg-white'
+          }`}
+        >
+          {formData.accountType === 'business' && (
+            <span className="absolute top-2.5 right-2.5 w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center">
+              <Check className="w-3 h-3 text-white" />
+            </span>
+          )}
+          <Building2 className={`w-7 h-7 mb-3 ${formData.accountType === 'business' ? 'text-slate-800' : 'text-slate-400'}`} />
+          <p className={`font-semibold text-sm ${formData.accountType === 'business' ? 'text-slate-800' : 'text-slate-600'}`}>Business</p>
+          <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">For companies and organisations</p>
         </button>
       </div>
     </div>
@@ -508,24 +596,26 @@ function StepAccountDetails({ formData, updateField }: { formData: SignUpFormDat
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-slate-700 text-sm font-medium mb-2">
-            <span className="flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-slate-400" />
-              Expected Supervisors
-            </span>
-          </label>
-          <input
-            type="number"
-            min="1"
-            value={formData.expectedSupervisorCount}
-            onChange={(e) => updateField('expectedSupervisorCount', e.target.value)}
-            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-slate-600 focus:ring-2 focus:ring-slate-100 text-sm"
-            placeholder="e.g. 5"
-          />
-          <p className="text-xs text-slate-400 mt-1">Users who manage queries</p>
-        </div>
+      <div className={isBusiness ? 'grid grid-cols-2 gap-3' : ''}>
+        {isBusiness && (
+          <div>
+            <label className="block text-slate-700 text-sm font-medium mb-2">
+              <span className="flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-slate-400" />
+                Expected Supervisors
+              </span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={formData.expectedSupervisorCount}
+              onChange={(e) => updateField('expectedSupervisorCount', e.target.value)}
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-slate-600 focus:ring-2 focus:ring-slate-100 text-sm"
+              placeholder="e.g. 5"
+            />
+            <p className="text-xs text-slate-400 mt-1">Users who manage queries</p>
+          </div>
+        )}
 
         <div>
           <label className="block text-slate-700 text-sm font-medium mb-2">
@@ -596,8 +686,8 @@ function StepAccessSecurity({ formData, updateField, passwordPolicy }: StepAcces
             required
           />
         </div>
-        {passwordPolicy && passwordPolicy.password_policy_applies_to.includes('member') && (
-          <PasswordStrengthIndicator password={formData.password} policy={passwordPolicy} userRole="member" />
+        {passwordPolicy && (
+          <PasswordStrengthIndicator password={formData.password} policy={passwordPolicy} />
         )}
       </div>
 

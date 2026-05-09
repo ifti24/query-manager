@@ -1,6 +1,37 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 
+export interface UnverifiedSignup {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  account_display_name: string | null;
+  mobile_number: string | null;
+  account_type: string | null;
+  created_at: string;
+  last_login_at: string | null;
+  is_active: boolean;
+  expected_supervisor_count: number | null;
+  expected_member_count: number | null;
+}
+
+export interface OtherUser {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  account_display_name: string | null;
+  mobile_number: string | null;
+  account_type: string | null;
+  created_at: string;
+  last_login_at: string | null;
+  is_active: boolean;
+  linked_account_id: string | null;
+  linked_account_name: string | null;
+  reason: string;
+}
+
 export interface AccountSummary {
   id: string;
   name: string;
@@ -42,6 +73,8 @@ export interface PlatformOverview {
   trialActive: number;
   trialExpired: number;
   accounts: AccountSummary[];
+  unverifiedSignups: UnverifiedSignup[];
+  otherUsers: OtherUser[];
 }
 
 export function usePlatformStats() {
@@ -59,6 +92,8 @@ export function usePlatformStats() {
         { data: plans },
         { data: userRoles },
         { data: queries },
+        { data: unverifiedRaw },
+        { data: orphanedRaw },
       ] = await Promise.all([
         supabase.from('accounts').select('id, name, owner_id, is_active, created_at').eq('is_active', true),
         supabase
@@ -73,6 +108,8 @@ export function usePlatformStats() {
           .from('queries')
           .select('id, created_by, status, archived')
           .is('archived', false),
+        supabase.rpc('get_unverified_signups'),
+        supabase.rpc('get_orphaned_users'),
       ]);
 
       const accountList = accounts ?? [];
@@ -80,6 +117,8 @@ export function usePlatformStats() {
       const planList = plans ?? [];
       const roleList = userRoles ?? [];
       const queryList = queries ?? [];
+      const unverifiedSignups: UnverifiedSignup[] = (unverifiedRaw ?? []) as UnverifiedSignup[];
+      const otherUsers: OtherUser[] = (orphanedRaw ?? []) as OtherUser[];
 
       const planMap = new Map(planList.map((p) => [p.id, p]));
       const subByAccount = new Map(subList.map((s) => [s.account_id, s]));
@@ -213,6 +252,8 @@ export function usePlatformStats() {
         trialActive,
         trialExpired,
         accounts: accountSummaries.sort((a, b) => b.total_queries - a.total_queries),
+        unverifiedSignups,
+        otherUsers,
       });
     } catch (err) {
       setError((err as { message?: string }).message ?? 'Failed to load platform stats');

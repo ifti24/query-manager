@@ -230,6 +230,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription: authSub },
     } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[AuthContext:onAuthStateChange] Event:', event, 'User:', session?.user?.id ?? 'none');
+      // TOKEN_REFRESHED and INITIAL_SESSION both fire when a backgrounded/minimized tab
+      // regains focus. Neither represents a real auth change — ignore them both entirely.
+      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') return;
+
       (async () => {
         if (event === 'SIGNED_OUT' || !session?.user) {
           setUser(null);
@@ -239,15 +243,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setRoleLoading(false);
           return;
         }
-        if (session?.user) {
-          setRoleLoading(true);
-          setUser(session.user);
-          try {
-            await loadUserData(session.user.id);
-          } catch (err) {
-            console.error('[AuthContext:onAuthStateChange] loadUserData failed:', err);
-            setRoleLoading(false);
-          }
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Only reload data if this is a genuinely different user signing in.
+          // setUser is synchronous so we compare against the ref captured at listener setup.
+          setUser((currentUser) => {
+            if (currentUser?.id === session.user!.id) {
+              // Same user — session was already loaded by initializeAuth, do nothing.
+              return currentUser;
+            }
+            // Different user (e.g. someone else signed in) — trigger a reload.
+            (async () => {
+              setRoleLoading(true);
+              try {
+                await loadUserData(session.user!.id);
+              } catch (err) {
+                console.error('[AuthContext:onAuthStateChange] loadUserData failed:', err);
+                setRoleLoading(false);
+              }
+            })();
+            return session.user;
+          });
         }
       })();
     });

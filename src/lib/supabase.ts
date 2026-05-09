@@ -32,6 +32,7 @@ export interface UserProfile {
   full_name: string | null;
   role: UserRole;
   account_id: string | null;
+  account_type: 'business' | 'individual' | null;
   is_active: boolean;
   is_deleted: boolean;
   deleted_at: string | null;
@@ -175,6 +176,7 @@ export interface AdminSettings {
   password_min_special: number;
   password_allowed_special_chars: string;
   password_policy_applies_to: string[];
+  require_email_verification: boolean;
   created_at: string;
   updated_at: string;
 }
