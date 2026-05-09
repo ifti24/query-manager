@@ -36,6 +36,13 @@ export async function signUp(payload: SignUpPayload) {
   return data;
 }
 
+export class EmailNotVerifiedError extends Error {
+  constructor(message = 'Your account is not activated yet. Please verify your email using the link we sent you.') {
+    super(message);
+    this.name = 'EmailNotVerifiedError';
+  }
+}
+
 export async function signIn(email: string, password: string) {
   console.log('[auth:signIn] Attempting sign in for:', email);
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -63,6 +70,30 @@ export async function signIn(email: string, password: string) {
     }
     throw error;
   }
+
+  // Gate: platform requires email verification AND profile not yet verified.
+  // Sign the user back out and throw a specific error the UI can display.
+  if (data.user) {
+    const { data: settings } = await supabase
+      .from('admin_settings')
+      .select('require_email_verification')
+      .is('account_id', null)
+      .maybeSingle();
+
+    if (settings?.require_email_verification) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('email_verified_at')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      if (!profile?.email_verified_at) {
+        await supabase.auth.signOut({ scope: 'local' });
+        throw new EmailNotVerifiedError();
+      }
+    }
+  }
+
   console.log('[auth:signIn] Sign in success, user:', data.user?.id);
   return data;
 }

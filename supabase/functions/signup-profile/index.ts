@@ -136,28 +136,23 @@ Deno.serve(async (req: Request) => {
       password_policy_applies_to: [],
     });
 
-    // 6. Generate email verification link via Supabase Admin API (24h lifetime).
-    // We use type "signup" so the token can confirm the user's email.
-    // After generating, we overwrite the redirect_to param in the action_link
-    // to point at the production domain — necessary because the Supabase project's
-    // Site URL may still be set to localhost in the dashboard.
-    const baseUrl = appUrl || "https://queryping.org";
-    let verifyUrl = baseUrl;
-    try {
-      const { data: linkData } = await supabase.auth.admin.generateLink({
-        type: "signup",
-        email,
-        options: { redirectTo: baseUrl },
-      });
-      if (linkData?.properties?.action_link) {
-        // Replace any redirect_to value inside the action_link with our production URL
-        const linkUrl = new URL(linkData.properties.action_link);
-        linkUrl.searchParams.set("redirect_to", baseUrl);
-        verifyUrl = linkUrl.toString();
-      }
-    } catch (_) {
-      verifyUrl = baseUrl;
-    }
+    // 6. Generate our own app-level email verification token (24h lifetime).
+    // Always point the verification link at the production domain so links from
+    // preview/localhost signups still resolve correctly.
+    const baseUrl = "https://queryping.org";
+    void appUrl;
+    const rawToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    await supabase.from("email_verification_tokens").insert({
+      user_id: userId,
+      token: rawToken,
+      expires_at: expiresAt,
+    });
+
+    const verifyUrl = `${baseUrl}?verify=${rawToken}`;
 
     // 7. Send welcome email with verification link
     const gmailUser = Deno.env.get("GMAIL_USER");

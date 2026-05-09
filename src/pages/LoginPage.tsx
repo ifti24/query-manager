@@ -114,6 +114,7 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
       const { data: settingsData } = await supabase
         .from('admin_settings')
         .select('require_email_verification')
+        .is('account_id', null)
         .maybeSingle();
       const requireVerification = settingsData?.require_email_verification ?? false;
 
@@ -239,12 +240,25 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
                 ))}
               </ol>
 
-              <p className="text-xs text-slate-400 text-center leading-relaxed">
+              <p className="text-xs text-slate-400 text-center leading-relaxed mb-6">
                 Didn't receive an email? Check your spam folder or contact{' '}
                 <a href="mailto:support.queryping@gmail.com" className="text-slate-500 hover:text-slate-700 underline underline-offset-2">
                   support.queryping@gmail.com
                 </a>
               </p>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSignUpSuccess(false);
+                  setIsSignUp(false);
+                  setEmail(formData.email);
+                  resetSignUp();
+                }}
+                className="w-full border border-slate-300 text-slate-700 py-2.5 rounded-lg font-medium hover:bg-slate-50 transition-colors text-sm"
+              >
+                Back to Sign In
+              </button>
             </div>
           ) : (
             /* No verification required — user can log in immediately */

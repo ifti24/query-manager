@@ -12,7 +12,7 @@ import { SessionTimeoutModal } from './components/common/SessionTimeoutModal';
 import { RoleSwitcherModal } from './components/common/RoleSwitcher';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import { supabase } from './lib/supabase';
-import { Clock, LogOut, Mail, ShieldCheck } from 'lucide-react';
+import { CheckCircle, Clock, LogOut, Mail, ShieldCheck, XCircle } from 'lucide-react';
 
 const LANDING_PATH = '/team-pulse';
 
@@ -22,25 +22,99 @@ interface SelectedPlan {
   price: number;
 }
 
+function EmailVerifyPage() {
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [message, setMessage] = useState('');
+  const token = new URLSearchParams(window.location.search).get('verify')!;
+
+  useEffect(() => {
+    const run = async () => {
+      // Always sign out any active session first — visiting a verify link must
+      // never land the user on a dashboard, regardless of who's logged in.
+      try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
+
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const r = await fetch(`${supabaseUrl}/functions/v1/verify-email?token=${encodeURIComponent(token)}`);
+        const d = await r.json();
+        if (d.success) {
+          setStatus('success');
+        } else {
+          setStatus('error');
+          setMessage(d.error ?? 'Verification failed.');
+        }
+      } catch {
+        setStatus('error');
+        setMessage('Network error. Please try again.');
+      }
+    };
+    run();
+  }, [token]);
+
+  const handleSignInClick = async () => {
+    try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
+    window.location.href = '/';
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200">
+        <div className="text-center px-8 pt-8 pb-6 border-b border-slate-100">
+          <h1 className="text-3xl font-bold text-slate-900 mb-1">QueryPing</h1>
+          <p className="text-xs text-slate-400 tracking-wide">Never miss a pending query</p>
+        </div>
+        <div className="px-8 py-10 text-center">
+          {status === 'loading' && (
+            <>
+              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-5 animate-pulse">
+                <Mail className="w-8 h-8 text-slate-400" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 mb-2">Verifying your email...</h2>
+              <p className="text-slate-500 text-sm">Please wait a moment.</p>
+            </>
+          )}
+          {status === 'success' && (
+            <>
+              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                <CheckCircle className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 mb-2">Email Verified!</h2>
+              <p className="text-slate-500 text-sm leading-relaxed mb-6">
+                Your email has been verified. You can now sign in to your account.
+              </p>
+              <button
+                type="button"
+                onClick={handleSignInClick}
+                className="w-full bg-slate-900 text-white py-2.5 rounded-lg font-medium hover:bg-slate-700 transition-colors text-sm"
+              >
+                Sign In
+              </button>
+            </>
+          )}
+          {status === 'error' && (
+            <>
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                <XCircle className="w-8 h-8 text-red-600" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 mb-2">Verification Failed</h2>
+              <p className="text-slate-500 text-sm leading-relaxed mb-6">{message}</p>
+              <p className="text-xs text-slate-400">
+                Need help? Contact{' '}
+                <a href="mailto:support.queryping@gmail.com" className="text-slate-600 underline">support.queryping@gmail.com</a>
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  const { user, loading, roleLoading, activeRole, allRoles, setActiveRole, sessionConfig } = useAuth();
+  const { user, profile, loading, roleLoading, activeRole, allRoles, setActiveRole, sessionConfig } = useAuth();
   const [showPricing, setShowPricing] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<SelectedPlan | null>(null);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
-  const [requireEmailVerification, setRequireEmailVerification] = useState(false);
-
-  useEffect(() => {
-    const isEmailUnconfirmed = user && !user.email_confirmed_at && !(user as any).confirmed_at;
-    if (!isEmailUnconfirmed) return;
-    supabase
-      .from('admin_settings')
-      .select('require_email_verification')
-      .is('account_id', null)
-      .maybeSingle()
-      .then(({ data }) => {
-        setRequireEmailVerification(data?.require_email_verification ?? false);
-      });
-  }, [user]);
 
   const handleSelectPlan = (planId: string, planName: string, planPrice: number) => {
     setSelectedPlan({ id: planId, name: planName, price: planPrice });
@@ -60,6 +134,11 @@ function App() {
 
   const isActivationRoute = currentPath === '/activate' || searchParams.has('token');
   const isLandingRoute = currentPath === LANDING_PATH;
+  const isVerifyRoute = searchParams.has('verify');
+
+  if (isVerifyRoute) {
+    return <EmailVerifyPage />;
+  }
 
   if (isActivationRoute && searchParams.has('token')) {
     return <AccountActivationPage />;
@@ -109,9 +188,9 @@ function App() {
   }
 
   if (!activeRole) {
-    const isEmailUnconfirmed = user && !user.email_confirmed_at && !(user as any).confirmed_at;
+    const isEmailUnverified = user && profile && !profile.email_verified_at;
 
-    if (isEmailUnconfirmed && requireEmailVerification) {
+    if (isEmailUnverified) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200">
@@ -162,7 +241,7 @@ function App() {
                 className="flex items-center justify-center gap-2 w-full border border-slate-300 text-slate-600 py-2.5 rounded-lg font-medium hover:bg-slate-50 transition-colors text-sm"
               >
                 <LogOut className="w-4 h-4" />
-                Sign Out
+                Go to Sign In
               </button>
             </div>
           </div>
