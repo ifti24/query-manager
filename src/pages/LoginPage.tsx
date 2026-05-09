@@ -146,6 +146,12 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
             appUrl: window.location.origin,
           }),
         });
+
+        // If email verification is required, sign out immediately so the user
+        // cannot access the app until they verify their email.
+        if (requireVerification) {
+          await supabase.auth.signOut({ scope: 'local' });
+        }
       }
 
       setSignUpRequiredVerification(requireVerification);
@@ -162,7 +168,21 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
     setError('');
     setLoading(true);
     try {
-      await signIn(email, password);
+      const data = await signIn(email, password);
+      // Block login for unverified emails when platform requires verification
+      const signedInUser = data.user;
+      if (signedInUser && !signedInUser.email_confirmed_at && !(signedInUser as any).confirmed_at) {
+        const { data: settingsData } = await supabase
+          .from('admin_settings')
+          .select('require_email_verification')
+          .is('account_id', null)
+          .maybeSingle();
+        if (settingsData?.require_email_verification) {
+          await supabase.auth.signOut({ scope: 'local' });
+          setError('Please verify your email address before signing in. Check your inbox for the verification link.');
+          return;
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {

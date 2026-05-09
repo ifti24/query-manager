@@ -137,8 +137,9 @@ Deno.serve(async (req: Request) => {
     });
 
     // 6. Generate email verification link via Supabase Admin API (24h lifetime)
-    const verifyRedirectTo = "https://queryping.org/verify-email";
-    let verifyUrl = "https://queryping.org";
+    const baseUrl = appUrl || "https://queryping.org";
+    const verifyRedirectTo = `${baseUrl}/verify-email`;
+    let verifyUrl = baseUrl;
     try {
       const { data: linkData } = await supabase.auth.admin.generateLink({
         type: "magiclink",
