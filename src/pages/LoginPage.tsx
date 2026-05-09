@@ -168,21 +168,7 @@ export default function LoginPage({ onShowPricing }: LoginPageProps) {
     setError('');
     setLoading(true);
     try {
-      const data = await signIn(email, password);
-      // Block login for unverified emails when platform requires verification
-      const signedInUser = data.user;
-      if (signedInUser && !signedInUser.email_confirmed_at && !(signedInUser as any).confirmed_at) {
-        const { data: settingsData } = await supabase
-          .from('admin_settings')
-          .select('require_email_verification')
-          .is('account_id', null)
-          .maybeSingle();
-        if (settingsData?.require_email_verification) {
-          await supabase.auth.signOut({ scope: 'local' });
-          setError('Please verify your email address before signing in. Check your inbox for the verification link.');
-          return;
-        }
-      }
+      await signIn(email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {

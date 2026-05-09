@@ -136,22 +136,27 @@ Deno.serve(async (req: Request) => {
       password_policy_applies_to: [],
     });
 
-    // 6. Generate email verification link via Supabase Admin API (24h lifetime)
+    // 6. Generate email verification link via Supabase Admin API (24h lifetime).
+    // We use type "signup" so the token can confirm the user's email.
+    // After generating, we overwrite the redirect_to param in the action_link
+    // to point at the production domain — necessary because the Supabase project's
+    // Site URL may still be set to localhost in the dashboard.
     const baseUrl = appUrl || "https://queryping.org";
-    const verifyRedirectTo = `${baseUrl}/verify-email`;
     let verifyUrl = baseUrl;
     try {
       const { data: linkData } = await supabase.auth.admin.generateLink({
-        type: "magiclink",
+        type: "signup",
         email,
-        options: { redirectTo: verifyRedirectTo },
+        options: { redirectTo: baseUrl },
       });
       if (linkData?.properties?.action_link) {
-        verifyUrl = linkData.properties.action_link;
+        // Replace any redirect_to value inside the action_link with our production URL
+        const linkUrl = new URL(linkData.properties.action_link);
+        linkUrl.searchParams.set("redirect_to", baseUrl);
+        verifyUrl = linkUrl.toString();
       }
     } catch (_) {
-      // Fall back to login page if link generation fails
-      verifyUrl = "https://queryping.org";
+      verifyUrl = baseUrl;
     }
 
     // 7. Send welcome email with verification link

@@ -124,6 +124,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveRoleState(role);
   }, []);
 
+  // Returns true if the user must be blocked because they haven't verified their
+  // email and the platform setting requires it. Signs them out as a side-effect.
+  const checkAndBlockUnverified = useCallback(async (sessionUser: { id: string; email_confirmed_at?: string | null; confirmed_at?: string | null }): Promise<boolean> => {
+    const isUnverified = !sessionUser.email_confirmed_at && !(sessionUser as any).confirmed_at;
+    if (!isUnverified) return false;
+    try {
+      const { data } = await supabase
+        .from('admin_settings')
+        .select('require_email_verification')
+        .is('account_id', null)
+        .maybeSingle();
+      if (data?.require_email_verification) {
+        await supabase.auth.signOut({ scope: 'local' });
+        return true;
+      }
+    } catch {
+      // If we can't check the setting, allow the user through — don't block on error
+    }
+    return false;
+  }, []);
+
   const loadUserData = useCallback(async (userId: string) => {
     console.log('[AuthContext:loadUserData] Loading user data for:', userId);
     let userProfile, roles;
@@ -193,6 +214,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('[AuthContext:initializeAuth] Session:', data.session ? `found (user: ${data.session.user?.id})` : 'none');
 
         if (data.session?.user) {
+          const blocked = await checkAndBlockUnverified(data.session.user);
+          if (blocked) {
+            setRoleLoading(false);
+            return;
+          }
+
           setRoleLoading(true);
           setUser(data.session.user);
           await loadUserData(data.session.user.id);
@@ -244,6 +271,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (event === 'SIGNED_IN' && session?.user) {
+          const blocked = await checkAndBlockUnverified(session.user);
+          if (blocked) return;
+
           // Only reload data if this is a genuinely different user signing in.
           // setUser is synchronous so we compare against the ref captured at listener setup.
           setUser((currentUser) => {
