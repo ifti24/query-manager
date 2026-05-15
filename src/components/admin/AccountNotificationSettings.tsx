@@ -305,7 +305,27 @@ export default function AccountNotificationSettings({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to send digest emails');
-      setDigestFeedback(`Sent! ${data.emailsSent ?? ''} emails delivered to your team members.`);
+
+      const parts: string[] = [`Sent! ${data.emailsSent ?? 0} emails delivered to your team members.`];
+
+      const sentEmails = (data.summary as { email: string; status: string }[] ?? [])
+        .filter((e) => e.status.startsWith('sent'))
+        .map((e) => e.email);
+      if (sentEmails.length > 0) {
+        parts.push(`Recipients: ${sentEmails.join(', ')}`);
+      }
+
+      if (data.emailsFailed > 0) {
+        parts.push(`${data.emailsFailed} failed.`);
+        if (data.errors?.length) parts.push(`Errors: ${data.errors.join('; ')}`);
+      }
+      if (data.emailsSent === 0 && data.skipped?.length) {
+        const reasons = (data.skipped as { account_id: string; reason: string }[])
+          .map((s) => s.reason)
+          .join('; ');
+        parts.push(`Skip reasons: ${reasons}`);
+      }
+      setDigestFeedback(parts.join(' '));
       fetchDigestSummary();
     } catch (err) {
       setDigestFeedback(err instanceof Error ? err.message : 'Failed to send digest emails');

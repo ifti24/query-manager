@@ -63,29 +63,31 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      const { data: userRole } = await supabase
+      const { data: userRoles } = await supabase
         .from("user_roles")
         .select("role, account_id")
         .eq("user_id", user.id)
-        .in("role", ["account_owner", "super_admin", "support_admin"])
-        .maybeSingle();
+        .in("role", ["account_owner", "super_admin", "support_admin"]);
 
-      if (!userRole) {
+      if (!userRoles || userRoles.length === 0) {
         return new Response(JSON.stringify({ error: "Forbidden: account owner access required" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // For account_owner, restrict to their own account
-      if (userRole.role === "account_owner" && userRole.account_id) {
-        forceAccountId = userRole.account_id;
+      // Platform admins can run for all accounts; account_owner restricted to their own
+      const isPlatformAdmin = userRoles.some((r: any) => r.role === "super_admin" || r.role === "support_admin");
+      if (!isPlatformAdmin) {
+        const ownerRow = userRoles.find((r: any) => r.role === "account_owner" && r.account_id);
+        if (ownerRow) forceAccountId = ownerRow.account_id;
       }
     }
 
-    // Load all active accounts with their admin_settings
+    // Load all active accounts with their admin_settings (exclude platform-level null row)
     const { data: allSettings, error: settingsError } = await supabase
       .from("admin_settings")
-      .select("account_id, email_schedule_time, email_schedule_enabled, email_timezone, email_schedule_days, digest_blacklist_dates");
+      .select("account_id, email_schedule_time, email_schedule_enabled, email_timezone, email_schedule_days, digest_blacklist_dates")
+      .not("account_id", "is", null);
 
     if (settingsError) throw settingsError;
     if (!allSettings || allSettings.length === 0) {
@@ -101,6 +103,7 @@ Deno.serve(async (req: Request) => {
 
     const digestBatchId = crypto.randomUUID();
     const emailSummary: { email: string; account_id: string; queriesCount: number; status: string; error?: string }[] = [];
+    const skippedAccounts: { account_id: string; reason: string }[] = [];
     const now = Date.now();
 
     // Process each account independently
@@ -112,7 +115,10 @@ Deno.serve(async (req: Request) => {
 
       // For scheduled runs, check this account's schedule settings
       if (!forceAccountId && triggered_by !== "admin") {
-        if (!settings.email_schedule_enabled) continue;
+        if (!settings.email_schedule_enabled) {
+          skippedAccounts.push({ account_id: accountId, reason: "schedule disabled" });
+          continue;
+        }
 
         const scheduledTime: string = settings.email_schedule_time ?? "08:00";
         const timezone: string = settings.email_timezone ?? "GMT+0";
@@ -128,13 +134,22 @@ Deno.serve(async (req: Request) => {
         const localDate = new Date(localMs);
 
         const currentLocalTime = `${localDate.getUTCHours().toString().padStart(2, "0")}:${localDate.getUTCMinutes().toString().padStart(2, "0")}`;
-        if (currentLocalTime !== scheduledTime) continue;
+        if (currentLocalTime !== scheduledTime) {
+          skippedAccounts.push({ account_id: accountId, reason: `time mismatch: now=${currentLocalTime} scheduled=${scheduledTime} tz=${timezone}` });
+          continue;
+        }
 
         const localDayOfWeek = localDate.getUTCDay();
-        if (!scheduleDays.includes(localDayOfWeek)) continue;
+        if (!scheduleDays.includes(localDayOfWeek)) {
+          skippedAccounts.push({ account_id: accountId, reason: `day not in schedule: dow=${localDayOfWeek} allowed=${scheduleDays}` });
+          continue;
+        }
 
         const localDateKey = `${localDate.getUTCFullYear()}-${String(localDate.getUTCMonth() + 1).padStart(2, "0")}-${String(localDate.getUTCDate()).padStart(2, "0")}`;
-        if (isDateBlacklisted(localDateKey, blacklistDates)) continue;
+        if (isDateBlacklisted(localDateKey, blacklistDates)) {
+          skippedAccounts.push({ account_id: accountId, reason: `date blacklisted: ${localDateKey}` });
+          continue;
+        }
       }
 
       // Get the account owner's email for the admin summary
@@ -156,12 +171,18 @@ Deno.serve(async (req: Request) => {
 
       if (membersError) {
         console.error(`Error fetching members for account ${accountId}:`, membersError);
+        skippedAccounts.push({ account_id: accountId, reason: `members fetch error: ${membersError.message}` });
         continue;
       }
 
-      const members = (memberRoles ?? [])
-        .map((r: any) => r.profiles)
-        .filter((p: any) => p && p.is_active && !p.is_deleted);
+      const allMemberProfiles = (memberRoles ?? []).map((r: any) => r.profiles);
+      const members = allMemberProfiles.filter((p: any) => p && p.is_active && !p.is_deleted);
+
+      if (allMemberProfiles.length === 0) {
+        skippedAccounts.push({ account_id: accountId, reason: "no members/supervisors found in user_roles" });
+      } else if (members.length === 0) {
+        skippedAccounts.push({ account_id: accountId, reason: `all ${allMemberProfiles.length} members inactive or deleted` });
+      }
 
       const memberQueryCounts: { name: string; email: string; openQueries: number }[] = [];
 
@@ -308,12 +329,15 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const failedEmails = emailSummary.filter((e) => e.status === "failed");
     return new Response(
       JSON.stringify({
         success: true,
         emailsSent: emailSummary.filter((e) => e.status.startsWith("sent")).length,
-        emailsFailed: emailSummary.filter((e) => e.status === "failed").length,
+        emailsFailed: failedEmails.length,
         summary: emailSummary,
+        skipped: skippedAccounts,
+        errors: failedEmails.map((e) => `${e.email}: ${e.error}`),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
