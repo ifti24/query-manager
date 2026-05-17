@@ -9,7 +9,7 @@ interface BkashPaymentPageProps {
 }
 
 const BKASH_NUMBER = '01737434318';
-const SUPPORT_EMAIL = 'billing.qp@gmail.com';
+const SUPPORT_EMAIL = 'billing.queryping@gmail.com';
 
 const STEPS = [
   {

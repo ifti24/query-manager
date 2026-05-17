@@ -11,8 +11,8 @@ interface LandingPageProps {
   onStartTrial: () => void;
 }
 
-const BILLING_EMAIL = 'billing.qp@gmail.com';
-const SUPPORT_EMAIL = 'support.qp@gmail.com';
+const BILLING_EMAIL = 'billing.queryping@gmail.com';
+const SUPPORT_EMAIL = 'support.queryping@gmail.com';
 
 function useInView(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
